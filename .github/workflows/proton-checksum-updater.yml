@@ -10,7 +10,8 @@ jobs:
   update-checksum:
     # Only run on Renovate PRs that update Proton version
     if: |
-      github.actor == 'jdogwilly-renovate[bot]' &&
+      github.event.pull_request.user.type == 'Bot' &&
+      github.event.pull_request.user.login == 'jdogwilly-renovate[bot]' &&
       startsWith(github.head_ref, 'renovate/')
 
     runs-on: ubuntu-latest
@@ -67,23 +68,16 @@ jobs:
 
       - name: Commit checksum file
         if: steps.check-checksum.outputs.exists == 'false'
-        run: |
-          git config --local user.name "jdogwilly-renovate[bot]"
-          git config --local user.email "219386028+jdogwilly-renovate[bot]@users.noreply.github.com"
-
-          git add root/usr/share/proton/GE-Proton${{ steps.extract-version.outputs.version }}.sha512sum
-
-          if git diff --cached --quiet; then
-            echo "No changes to commit"
-          else
-            git commit -m "chore: add SHA512 checksum for Proton ${{ steps.extract-version.outputs.version }}"
-            git push
-            echo "Checksum file committed and pushed"
-          fi
+        uses: stefanzweifel/git-auto-commit-action@b863ae1933cb653a53c021fe36dbb774e1fb9403 # v5
+        with:
+          commit_message: "chore: add SHA512 checksum for Proton ${{ steps.extract-version.outputs.version }}"
+          commit_user_name: "jdogwilly-renovate[bot]"
+          commit_user_email: "219386028+jdogwilly-renovate[bot]@users.noreply.github.com"
+          file_pattern: 'root/usr/share/proton/*.sha512sum'
 
       - name: Add comment to PR
         if: steps.check-checksum.outputs.exists == 'false'
-        uses: marocchino/sticky-pull-request-comment@v2
+        uses: marocchino/sticky-pull-request-comment@331f8f5b4a9b46330b0f00d5dc69d7aef0c3f01c # v2
         with:
           header: proton-checksum
           message: |
