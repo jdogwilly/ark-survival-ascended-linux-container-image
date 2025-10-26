@@ -96,6 +96,9 @@ RUN apt-get update && apt-get install -y \
 RUN sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen && \
     locale-gen en_US.UTF-8
 
+# Generate machine-id for Wine/Proton compatibility (eliminates warning)
+RUN python3 -c "import uuid; print(uuid.uuid4().hex)" > /etc/machine-id
+
 # Create gameserver user and group with specific UID/GID (rarely changes)
 RUN groupadd -g 25000 gameserver && \
     useradd -u 25000 -g 25000 -m -d /home/gameserver -s /bin/bash gameserver
