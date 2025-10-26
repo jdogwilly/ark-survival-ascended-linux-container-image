@@ -5,6 +5,141 @@ if [ "$ENABLE_DEBUG" = "1" ]; then
   exit 0
 fi
 
+# Configuration variables for SteamCMD retry logic
+STEAMCMD_MAX_RETRIES="${STEAMCMD_MAX_RETRIES:-10}"
+STEAMCMD_RETRY_DELAY="${STEAMCMD_RETRY_DELAY:-5}"
+STEAMCMD_AUTO_CLEANUP="${STEAMCMD_AUTO_CLEANUP:-true}"
+STEAMCMD_LOG="/tmp/steamcmd_last_run.log"
+SERVER_FILES_DIR="/home/gameserver/server-files"
+STEAM_DIR="/home/gameserver/Steam"
+
+# Function to check available disk space
+check_disk_space() {
+  local required_gb=15
+  local available_kb=$(df -k "$SERVER_FILES_DIR" | awk 'NR==2 {print $4}')
+  local available_gb=$((available_kb / 1024 / 1024))
+
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] Checking disk space..."
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] Available: ${available_gb}GB, Required: ${required_gb}GB"
+
+  if [ "$available_gb" -lt "$required_gb" ]; then
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: Insufficient disk space!"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] ARK: Survival Ascended requires at least ${required_gb}GB free space."
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Please free up disk space and try again."
+    exit 202
+  fi
+
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] Disk space check passed."
+}
+
+# Function to detect SteamCMD errors
+detect_steamcmd_error() {
+  local log_file="$1"
+
+  if grep -q "state is 0x6 after update job" "$log_file" 2>/dev/null; then
+    echo "0x6"
+  elif grep -q "state is 0x606 after update job" "$log_file" 2>/dev/null; then
+    echo "0x606"
+  elif grep -q "state is 0x202 after update job" "$log_file" 2>/dev/null; then
+    echo "0x202"
+  elif grep -q "state is 0x402 after update job" "$log_file" 2>/dev/null; then
+    echo "0x402"
+  elif grep -q "state is 0x406 after update job" "$log_file" 2>/dev/null; then
+    echo "0x406"
+  elif grep -q "state is 0x106 after update job" "$log_file" 2>/dev/null; then
+    echo "0x106"
+  else
+    echo "none"
+  fi
+}
+
+# Function to cleanup corrupted Steam files
+cleanup_steam_directory() {
+  if [ "$STEAMCMD_AUTO_CLEANUP" = "true" ]; then
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Cleaning up potentially corrupted Steam directory..."
+    if [ -d "$STEAM_DIR" ]; then
+      rm -rf "$STEAM_DIR"
+      echo "[$(date '+%Y-%m-%d %H:%M:%S')] Steam directory removed. Will be recreated on next attempt."
+    fi
+  else
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Auto-cleanup disabled. Set STEAMCMD_AUTO_CLEANUP=true to enable."
+  fi
+}
+
+# Function to run SteamCMD with retry logic
+run_steamcmd_with_retry() {
+  local attempt=1
+  local max_retries="$STEAMCMD_MAX_RETRIES"
+  local base_delay="$STEAMCMD_RETRY_DELAY"
+  local cleanup_threshold=$((max_retries / 2))
+
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting SteamCMD download/update (max retries: $max_retries)..."
+
+  while [ "$attempt" -le "$max_retries" ]; do
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Attempt $attempt of $max_retries..."
+
+    # Run SteamCMD and capture output
+    cd /home/gameserver/steamcmd
+    ./steamcmd.sh +force_install_dir "$SERVER_FILES_DIR" +login anonymous +app_update 2430930 validate +quit 2>&1 | tee "$STEAMCMD_LOG"
+    local exit_code="${PIPESTATUS[0]}"
+
+    # Check if successful
+    if [ "$exit_code" -eq 0 ]; then
+      # Also verify no error states in output
+      local error_code=$(detect_steamcmd_error "$STEAMCMD_LOG")
+      if [ "$error_code" = "none" ]; then
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] SteamCMD completed successfully!"
+        return 0
+      else
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] SteamCMD reported error state: $error_code"
+      fi
+    else
+      echo "[$(date '+%Y-%m-%d %H:%M:%S')] SteamCMD exited with code: $exit_code"
+    fi
+
+    # Detect specific error
+    local error_code=$(detect_steamcmd_error "$STEAMCMD_LOG")
+    if [ "$error_code" != "none" ]; then
+      echo "[$(date '+%Y-%m-%d %H:%M:%S')] Detected error: $error_code"
+
+      case "$error_code" in
+        "0x6")
+          echo "[$(date '+%Y-%m-%d %H:%M:%S')] Error 0x6: No connection to content servers or corrupted files"
+          ;;
+        "0x606")
+          echo "[$(date '+%Y-%m-%d %H:%M:%S')] Error 0x606: Disk write failure or permission issues"
+          ;;
+        "0x202")
+          echo "[$(date '+%Y-%m-%d %H:%M:%S')] Error 0x202: Insufficient disk space"
+          ;;
+      esac
+    fi
+
+    # If we've hit the cleanup threshold, try removing corrupted Steam directory
+    if [ "$attempt" -eq "$cleanup_threshold" ]; then
+      echo "[$(date '+%Y-%m-%d %H:%M:%S')] Reached cleanup threshold. Attempting to clean corrupted files..."
+      cleanup_steam_directory
+    fi
+
+    # Check if we've exhausted retries
+    if [ "$attempt" -eq "$max_retries" ]; then
+      echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: SteamCMD failed after $max_retries attempts!"
+      echo "[$(date '+%Y-%m-%d %H:%M:%S')] Last error: $error_code"
+      echo "[$(date '+%Y-%m-%d %H:%M:%S')] Check $STEAMCMD_LOG for details."
+      return 1
+    fi
+
+    # Calculate delay with exponential backoff
+    local delay=$((base_delay * attempt))
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Waiting ${delay}s before retry..."
+    sleep "$delay"
+
+    attempt=$((attempt + 1))
+  done
+
+  return 1
+}
+
 # download steamcmd if necessary
 if [ ! -d "/home/gameserver/steamcmd/linux32" ]; then
   cd /home/gameserver/steamcmd
@@ -12,9 +147,14 @@ if [ ! -d "/home/gameserver/steamcmd/linux32" ]; then
   tar xfvz steamcmd_linux.tar.gz
 fi
 
-# download/update server files
-cd /home/gameserver/steamcmd
-./steamcmd.sh +force_install_dir /home/gameserver/server-files +login anonymous +app_update 2430930 validate +quit
+# Check disk space before attempting download
+check_disk_space
+
+# download/update server files with retry logic
+if ! run_steamcmd_with_retry; then
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] FATAL: Unable to download/update server files."
+  exit 203
+fi
 
 PROTON_VERSION="10-17"
 PROTON_DIR_NAME="GE-Proton$PROTON_VERSION"

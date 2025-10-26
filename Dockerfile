@@ -72,7 +72,7 @@ ARG LIBFREETYPE6_VERSION="2.13.2+dfsg-1build3"
 # renovate: suite=noble depName=procps
 ARG PROCPS_VERSION="2:4.0.4-4ubuntu3.2"
 # renovate: suite=noble depName=locales
-ARG LOCALES_VERSION="2.39-0ubuntu8.3"
+ARG LOCALES_VERSION="2.39-0ubuntu8.6"
 
 # Install runtime packages only with pinned versions (optimized layer ordering - rarely changes)
 RUN apt-get update && apt-get install -y \
