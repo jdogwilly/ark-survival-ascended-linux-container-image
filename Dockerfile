@@ -51,6 +51,9 @@ LABEL org.opencontainers.image.vendor="Community"
 # Prevent interactive prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
 
+# Set default locale to prevent SteamCMD warnings
+ENV LANG=en_US.UTF-8
+
 # Package versions for reproducible builds
 # renovate: suite=noble depName=lib32gcc-s1
 ARG LIB32GCC_VERSION="14.2.0-4ubuntu2~24.04"
@@ -68,6 +71,8 @@ ARG CA_CERTS_VERSION="20240203"
 ARG LIBFREETYPE6_VERSION="2.13.2+dfsg-1build3"
 # renovate: suite=noble depName=procps
 ARG PROCPS_VERSION="2:4.0.4-4ubuntu3.2"
+# renovate: suite=noble depName=locales
+ARG LOCALES_VERSION="2.39-0ubuntu8.3"
 
 # Install runtime packages only with pinned versions (optimized layer ordering - rarely changes)
 RUN apt-get update && apt-get install -y \
@@ -83,7 +88,13 @@ RUN apt-get update && apt-get install -y \
     libfreetype6=${LIBFREETYPE6_VERSION} \
     # Health check utilities
     procps=${PROCPS_VERSION} \
+    # Locale support for SteamCMD
+    locales=${LOCALES_VERSION} \
     && rm -rf /var/lib/apt/lists/*
+
+# Generate en_US.UTF-8 locale for SteamCMD
+RUN sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen && \
+    locale-gen en_US.UTF-8
 
 # Create gameserver user and group with specific UID/GID (rarely changes)
 RUN groupadd -g 25000 gameserver && \
