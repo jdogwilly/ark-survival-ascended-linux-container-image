@@ -36,7 +36,9 @@ check_disk_space() {
 detect_steamcmd_error() {
   local log_file="$1"
 
-  if grep -q "state is 0x6 after update job" "$log_file" 2>/dev/null; then
+  if grep -q "state is 0x602 after update job" "$log_file" 2>/dev/null; then
+    echo "0x602"
+  elif grep -q "state is 0x6 after update job" "$log_file" 2>/dev/null; then
     echo "0x6"
   elif grep -q "state is 0x606 after update job" "$log_file" 2>/dev/null; then
     echo "0x606"
@@ -53,13 +55,41 @@ detect_steamcmd_error() {
   fi
 }
 
-# Function to cleanup corrupted Steam files
+# Function to cleanup corrupted appmanifest (fixes validation loop)
+cleanup_appmanifest() {
+  local appmanifest="$SERVER_FILES_DIR/steamapps/appmanifest_2430930.acf"
+  local downloading_dir="$SERVER_FILES_DIR/steamapps/downloading"
+
+  if [ "$STEAMCMD_AUTO_CLEANUP" = "true" ]; then
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Cleaning up corrupted appmanifest and incomplete downloads..."
+
+    # Delete corrupted appmanifest file
+    if [ -f "$appmanifest" ]; then
+      rm -f "$appmanifest"
+      echo "[$(date '+%Y-%m-%d %H:%M:%S')] Removed corrupted appmanifest file"
+    fi
+
+    # Delete incomplete downloads
+    if [ -d "$downloading_dir" ]; then
+      rm -rf "$downloading_dir"
+      echo "[$(date '+%Y-%m-%d %H:%M:%S')] Removed incomplete downloads directory"
+    fi
+
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Cleanup complete. SteamCMD will restart download from scratch."
+  else
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Auto-cleanup disabled. Set STEAMCMD_AUTO_CLEANUP=true to enable."
+  fi
+}
+
+# Function to cleanup corrupted Steam files (for non-0x602 errors)
 cleanup_steam_directory() {
   if [ "$STEAMCMD_AUTO_CLEANUP" = "true" ]; then
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] Cleaning up potentially corrupted Steam directory..."
     if [ -d "$STEAM_DIR" ]; then
-      rm -rf "$STEAM_DIR"
-      echo "[$(date '+%Y-%m-%d %H:%M:%S')] Steam directory removed. Will be recreated on next attempt."
+      # Note: This will fail on emptyDir volumes with "Device or resource busy"
+      # but we keep it for compatibility with non-Kubernetes deployments
+      rm -rf "$STEAM_DIR" 2>/dev/null || echo "[$(date '+%Y-%m-%d %H:%M:%S')] Warning: Could not remove Steam directory (may be mounted)"
+      echo "[$(date '+%Y-%m-%d %H:%M:%S')] Steam directory cleanup attempted."
     fi
   else
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] Auto-cleanup disabled. Set STEAMCMD_AUTO_CLEANUP=true to enable."
@@ -103,6 +133,14 @@ run_steamcmd_with_retry() {
       echo "[$(date '+%Y-%m-%d %H:%M:%S')] Detected error: $error_code"
 
       case "$error_code" in
+        "0x602")
+          echo "[$(date '+%Y-%m-%d %H:%M:%S')] Error 0x602: Corrupted appmanifest or incomplete download"
+          # For 0x602 errors, cleanup appmanifest immediately on 2nd attempt
+          if [ "$attempt" -ge 2 ]; then
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] Attempting targeted cleanup for validation loop..."
+            cleanup_appmanifest
+          fi
+          ;;
         "0x6")
           echo "[$(date '+%Y-%m-%d %H:%M:%S')] Error 0x6: No connection to content servers or corrupted files"
           ;;
@@ -115,8 +153,8 @@ run_steamcmd_with_retry() {
       esac
     fi
 
-    # If we've hit the cleanup threshold, try removing corrupted Steam directory
-    if [ "$attempt" -eq "$cleanup_threshold" ]; then
+    # If we've hit the cleanup threshold for other errors, try removing corrupted Steam directory
+    if [ "$attempt" -eq "$cleanup_threshold" ] && [ "$error_code" != "0x602" ]; then
       echo "[$(date '+%Y-%m-%d %H:%M:%S')] Reached cleanup threshold. Attempting to clean corrupted files..."
       cleanup_steam_directory
     fi
