@@ -1,9 +1,49 @@
 #!/bin/bash
+
+# ============================================================================
+# Logging Helper Functions
+# ============================================================================
+
+log_stage() {
+  local stage_num="$1"
+  local stage_name="$2"
+  echo ""
+  echo "================================================================================"
+  echo "  STAGE $stage_num: $stage_name"
+  echo "================================================================================"
+  echo ""
+}
+
+log_info() {
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] $1"
+}
+
+log_success() {
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] [SUCCESS] ✓ $1"
+}
+
+log_error() {
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] [ERROR] ✗ $1"
+}
+
+log_warning() {
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] [WARNING] ! $1"
+}
+
+# ============================================================================
+# Debug Mode Check
+# ============================================================================
+
 if [ "$ENABLE_DEBUG" = "1" ]; then
-  echo "Entering debug mode..."
+  log_warning "Debug mode enabled - container will sleep indefinitely"
+  log_info "To access the container, use: docker exec -ti <container-name> bash"
   sleep 999999999999
   exit 0
 fi
+
+# ============================================================================
+# Configuration Variables
+# ============================================================================
 
 # Configuration variables for SteamCMD retry logic
 STEAMCMD_MAX_RETRIES="${STEAMCMD_MAX_RETRIES:-10}"
@@ -19,17 +59,17 @@ check_disk_space() {
   local available_kb=$(df -k "$SERVER_FILES_DIR" | awk 'NR==2 {print $4}')
   local available_gb=$((available_kb / 1024 / 1024))
 
-  echo "[$(date '+%Y-%m-%d %H:%M:%S')] Checking disk space..."
-  echo "[$(date '+%Y-%m-%d %H:%M:%S')] Available: ${available_gb}GB, Required: ${required_gb}GB"
+  log_info "Checking available disk space..."
+  log_info "Available: ${available_gb}GB | Required: ${required_gb}GB"
 
   if [ "$available_gb" -lt "$required_gb" ]; then
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: Insufficient disk space!"
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] ARK: Survival Ascended requires at least ${required_gb}GB free space."
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Please free up disk space and try again."
+    log_error "Insufficient disk space!"
+    log_error "ARK: Survival Ascended requires at least ${required_gb}GB free space."
+    log_error "Please free up disk space and try again."
     exit 202
   fi
 
-  echo "[$(date '+%Y-%m-%d %H:%M:%S')] Disk space check passed."
+  log_success "Disk space check passed (${available_gb}GB available)"
 }
 
 # Function to detect SteamCMD errors
@@ -61,38 +101,38 @@ cleanup_appmanifest() {
   local downloading_dir="$SERVER_FILES_DIR/steamapps/downloading"
 
   if [ "$STEAMCMD_AUTO_CLEANUP" = "true" ]; then
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Cleaning up corrupted appmanifest and incomplete downloads..."
+    log_info "Cleaning up corrupted appmanifest and incomplete downloads..."
 
     # Delete corrupted appmanifest file
     if [ -f "$appmanifest" ]; then
       rm -f "$appmanifest"
-      echo "[$(date '+%Y-%m-%d %H:%M:%S')] Removed corrupted appmanifest file"
+      log_info "Removed corrupted appmanifest file"
     fi
 
     # Delete incomplete downloads
     if [ -d "$downloading_dir" ]; then
       rm -rf "$downloading_dir"
-      echo "[$(date '+%Y-%m-%d %H:%M:%S')] Removed incomplete downloads directory"
+      log_info "Removed incomplete downloads directory"
     fi
 
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Cleanup complete. SteamCMD will restart download from scratch."
+    log_success "Cleanup complete - SteamCMD will restart download from scratch"
   else
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Auto-cleanup disabled. Set STEAMCMD_AUTO_CLEANUP=true to enable."
+    log_warning "Auto-cleanup disabled. Set STEAMCMD_AUTO_CLEANUP=true to enable."
   fi
 }
 
 # Function to cleanup corrupted Steam files (for non-0x602 errors)
 cleanup_steam_directory() {
   if [ "$STEAMCMD_AUTO_CLEANUP" = "true" ]; then
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Cleaning up potentially corrupted Steam directory..."
+    log_info "Cleaning up potentially corrupted Steam directory..."
     if [ -d "$STEAM_DIR" ]; then
       # Note: This will fail on emptyDir volumes with "Device or resource busy"
       # but we keep it for compatibility with non-Kubernetes deployments
-      rm -rf "$STEAM_DIR" 2>/dev/null || echo "[$(date '+%Y-%m-%d %H:%M:%S')] Warning: Could not remove Steam directory (may be mounted)"
-      echo "[$(date '+%Y-%m-%d %H:%M:%S')] Steam directory cleanup attempted."
+      rm -rf "$STEAM_DIR" 2>/dev/null || log_warning "Could not remove Steam directory (may be mounted)"
+      log_info "Steam directory cleanup attempted"
     fi
   else
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Auto-cleanup disabled. Set STEAMCMD_AUTO_CLEANUP=true to enable."
+    log_warning "Auto-cleanup disabled. Set STEAMCMD_AUTO_CLEANUP=true to enable."
   fi
 }
 
@@ -103,10 +143,10 @@ run_steamcmd_with_retry() {
   local base_delay="$STEAMCMD_RETRY_DELAY"
   local cleanup_threshold=$((max_retries / 2))
 
-  echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting SteamCMD download/update (max retries: $max_retries)..."
+  log_info "Starting SteamCMD download/update (max retries: $max_retries)"
 
   while [ "$attempt" -le "$max_retries" ]; do
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Attempt $attempt of $max_retries..."
+    log_info "Attempt $attempt of $max_retries"
 
     # Run SteamCMD and capture output
     cd /home/gameserver/steamcmd
@@ -118,58 +158,58 @@ run_steamcmd_with_retry() {
       # Also verify no error states in output
       local error_code=$(detect_steamcmd_error "$STEAMCMD_LOG")
       if [ "$error_code" = "none" ]; then
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] SteamCMD completed successfully!"
+        log_success "SteamCMD completed successfully!"
         return 0
       else
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] SteamCMD reported error state: $error_code"
+        log_warning "SteamCMD reported error state: $error_code"
       fi
     else
-      echo "[$(date '+%Y-%m-%d %H:%M:%S')] SteamCMD exited with code: $exit_code"
+      log_warning "SteamCMD exited with code: $exit_code"
     fi
 
     # Detect specific error
     local error_code=$(detect_steamcmd_error "$STEAMCMD_LOG")
     if [ "$error_code" != "none" ]; then
-      echo "[$(date '+%Y-%m-%d %H:%M:%S')] Detected error: $error_code"
+      log_error "Detected error: $error_code"
 
       case "$error_code" in
         "0x602")
-          echo "[$(date '+%Y-%m-%d %H:%M:%S')] Error 0x602: Corrupted appmanifest or incomplete download"
+          log_info "Error 0x602: Corrupted appmanifest or incomplete download"
           # For 0x602 errors, cleanup appmanifest immediately on 2nd attempt
           if [ "$attempt" -ge 2 ]; then
-            echo "[$(date '+%Y-%m-%d %H:%M:%S')] Attempting targeted cleanup for validation loop..."
+            log_info "Attempting targeted cleanup for validation loop..."
             cleanup_appmanifest
           fi
           ;;
         "0x6")
-          echo "[$(date '+%Y-%m-%d %H:%M:%S')] Error 0x6: No connection to content servers or corrupted files"
+          log_info "Error 0x6: No connection to content servers or corrupted files"
           ;;
         "0x606")
-          echo "[$(date '+%Y-%m-%d %H:%M:%S')] Error 0x606: Disk write failure or permission issues"
+          log_info "Error 0x606: Disk write failure or permission issues"
           ;;
         "0x202")
-          echo "[$(date '+%Y-%m-%d %H:%M:%S')] Error 0x202: Insufficient disk space"
+          log_info "Error 0x202: Insufficient disk space"
           ;;
       esac
     fi
 
     # If we've hit the cleanup threshold for other errors, try removing corrupted Steam directory
     if [ "$attempt" -eq "$cleanup_threshold" ] && [ "$error_code" != "0x602" ]; then
-      echo "[$(date '+%Y-%m-%d %H:%M:%S')] Reached cleanup threshold. Attempting to clean corrupted files..."
+      log_info "Reached cleanup threshold (attempt $cleanup_threshold/$max_retries)"
       cleanup_steam_directory
     fi
 
     # Check if we've exhausted retries
     if [ "$attempt" -eq "$max_retries" ]; then
-      echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: SteamCMD failed after $max_retries attempts!"
-      echo "[$(date '+%Y-%m-%d %H:%M:%S')] Last error: $error_code"
-      echo "[$(date '+%Y-%m-%d %H:%M:%S')] Check $STEAMCMD_LOG for details."
+      log_error "SteamCMD failed after $max_retries attempts!"
+      log_error "Last error: $error_code"
+      log_error "Check $STEAMCMD_LOG for details"
       return 1
     fi
 
     # Calculate delay with exponential backoff
     local delay=$((base_delay * attempt))
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Waiting ${delay}s before retry..."
+    log_info "Waiting ${delay}s before retry..."
     sleep "$delay"
 
     attempt=$((attempt + 1))
@@ -178,21 +218,60 @@ run_steamcmd_with_retry() {
   return 1
 }
 
+# ============================================================================
+# STAGE 1: Initialization
+# ============================================================================
+
+log_stage "1" "Initialization & Configuration Check"
+log_info "ARK: Survival Ascended Dedicated Server - Linux Container"
+log_info "Server files directory: $SERVER_FILES_DIR"
+log_info "Steam directory: $STEAM_DIR"
+log_info "SteamCMD retry configuration: Max retries=$STEAMCMD_MAX_RETRIES, Delay=${STEAMCMD_RETRY_DELAY}s, Auto-cleanup=$STEAMCMD_AUTO_CLEANUP"
+
+# ============================================================================
+# STAGE 2: SteamCMD Setup
+# ============================================================================
+
+log_stage "2" "SteamCMD Setup"
+
 # download steamcmd if necessary
 if [ ! -d "/home/gameserver/steamcmd/linux32" ]; then
+  log_info "SteamCMD not found - downloading installer..."
   cd /home/gameserver/steamcmd
 	wget https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz
+  log_info "Extracting SteamCMD..."
   tar xfvz steamcmd_linux.tar.gz
+  log_success "SteamCMD installed successfully"
+else
+  log_success "SteamCMD already installed"
 fi
 
-# Check disk space before attempting download
+# ============================================================================
+# STAGE 3: Disk Space Verification
+# ============================================================================
+
+log_stage "3" "Disk Space Verification"
 check_disk_space
+
+# ============================================================================
+# STAGE 4: Server Files Download/Update
+# ============================================================================
+
+log_stage "4" "Server Files Download/Update"
+log_info "Downloading/updating ARK: Survival Ascended server files (AppID: 2430930)"
+log_info "This may take a while depending on your internet connection..."
 
 # download/update server files with retry logic
 if ! run_steamcmd_with_retry; then
-  echo "[$(date '+%Y-%m-%d %H:%M:%S')] FATAL: Unable to download/update server files."
+  log_error "FATAL: Unable to download/update server files after all retry attempts"
   exit 203
 fi
+
+# ============================================================================
+# STAGE 5: Proton Installation
+# ============================================================================
+
+log_stage "5" "Proton Installation"
 
 PROTON_VERSION="10-17"
 PROTON_DIR_NAME="GE-Proton$PROTON_VERSION"
@@ -216,54 +295,96 @@ ASA_PLUGIN_LOADER_ARCHIVE_PATH="$ASA_BINARY_DIR/$ASA_PLUGIN_LOADER_ARCHIVE_NAME"
 ASA_PLUGIN_BINARY_PATH="$ASA_BINARY_DIR/$ASA_PLUGIN_BINARY_NAME"
 LAUNCH_BINARY_NAME="$ASA_BINARY_NAME"
 
+log_info "Proton version: GE-Proton$PROTON_VERSION"
+
 # install proton if necessary
 if [ ! -d "$STEAM_COMPAT_DIR/$PROTON_DIR_NAME" ]; then
   mkdir -p $STEAM_COMPAT_DIR
-  echo "Downloading Proton version $PROTON_VERSION... This might take a while"
+  log_info "Proton not found - downloading GE-Proton$PROTON_VERSION..."
+  log_info "This might take a while (~400-500MB download)..."
   wget -P /tmp https://github.com/GloriousEggroll/proton-ge-custom/releases/download/GE-Proton$PROTON_VERSION/GE-Proton$PROTON_VERSION.tar.gz
   EXIT_CODE=$?
 
   if [ $EXIT_CODE -ne 0 ]; then
-    echo "Error: Error while downloading Proton ($EXIT_CODE)"
+    log_error "Failed to download Proton (exit code: $EXIT_CODE)"
     exit 200
   fi
 
-  echo "Download finished, comparing checksums..."
+  log_info "Download complete - verifying SHA512 checksum..."
   sha512sum -c /usr/share/proton/GE-Proton$PROTON_VERSION.sha512sum
 
   if [ $? -ne 0 ]; then
-    echo "Error: Proton checksum mismatch!"
+    log_error "Proton checksum verification failed!"
+    log_error "Downloaded file may be corrupted or tampered with"
     exit 201
   fi
 
+  log_success "Checksum verified"
+  log_info "Extracting Proton to $STEAM_COMPAT_DIR..."
   tar -xf /tmp/$PROTON_ARCHIVE_NAME -C $STEAM_COMPAT_DIR
   rm /tmp/$PROTON_ARCHIVE_NAME
+  log_success "Proton GE-$PROTON_VERSION installed successfully"
+else
+  log_success "Proton GE-$PROTON_VERSION already installed"
 fi
+
+# ============================================================================
+# STAGE 6: Compatibility Layer Setup
+# ============================================================================
+
+log_stage "6" "Compatibility Layer Setup"
 
 # install proton compat game data
 if [ ! -d "$ASA_COMPAT_DATA" ]; then
+  log_info "Creating Wine prefix for ARK: Survival Ascended..."
   mkdir -p $STEAM_COMPAT_DATA
   cp -r $STEAM_COMPAT_DIR/$PROTON_DIR_NAME/files/share/default_pfx $ASA_COMPAT_DATA
+  log_success "Wine prefix created at $ASA_COMPAT_DATA"
+else
+  log_success "Wine prefix already exists"
 fi
 
-echo "Starting the ARK: Survival Ascended dedicated server..."
-echo "Start parameters: $ASA_START_PARAMS"
-
+log_info "Setting up Proton environment variables..."
 export XDG_RUNTIME_DIR=/run/user/$(id -u)
 export STEAM_COMPAT_CLIENT_INSTALL_PATH=/home/gameserver/Steam
 export STEAM_COMPAT_DATA_PATH=$ASA_COMPAT_DATA
+log_success "Environment configured"
+
+# ============================================================================
+# STAGE 7: Plugin Installation (Optional)
+# ============================================================================
+
+log_stage "7" "Plugin Installation (Optional)"
 
 cd "$ASA_BINARY_DIR"
 
 # unzip the asa plugin api archive if it exists. delete it afterwards
 if [ -f "$ASA_PLUGIN_LOADER_ARCHIVE_PATH" ]; then
+  log_info "ASA Server API plugin archive detected: $ASA_PLUGIN_LOADER_ARCHIVE_NAME"
+  log_info "Extracting plugin loader..."
   unzip -o $ASA_PLUGIN_LOADER_ARCHIVE_NAME
   rm $ASA_PLUGIN_LOADER_ARCHIVE_NAME
+  log_success "Plugin loader extracted"
 fi
 
 if [ -f "$ASA_PLUGIN_BINARY_PATH" ]; then
-  echo "Detected ASA Server API loader. Launching server through $ASA_PLUGIN_BINARY_NAME"
+  log_success "ASA Server API loader detected"
+  log_info "Server will launch through $ASA_PLUGIN_BINARY_NAME"
   LAUNCH_BINARY_NAME="$ASA_PLUGIN_BINARY_NAME"
+else
+  log_info "No plugins detected - using standard server binary"
 fi
+
+# ============================================================================
+# STAGE 8: Server Launch
+# ============================================================================
+
+log_stage "8" "Server Launch"
+
+log_info "Launch binary: $LAUNCH_BINARY_NAME"
+log_info "Start parameters: $ASA_START_PARAMS"
+log_info ""
+log_success "All initialization complete - launching ARK: Survival Ascended server!"
+log_info ""
 
 $STEAM_COMPAT_DIR/$PROTON_DIR_NAME/proton run $LAUNCH_BINARY_NAME $ASA_START_PARAMS
