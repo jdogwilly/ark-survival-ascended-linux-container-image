@@ -31,6 +31,86 @@ log_warning() {
 }
 
 # ============================================================================
+# Config Management Helper Functions
+# ============================================================================
+
+validate_ini_file() {
+  local ini_file="$1"
+
+  # Use Python to validate INI file syntax
+  python3 -c "
+import configparser
+import sys
+
+try:
+    config = configparser.ConfigParser(strict=False)
+    config.read('$ini_file')
+    sys.exit(0)
+except Exception as e:
+    print(f'INI validation error: {e}', file=sys.stderr)
+    sys.exit(1)
+"
+  return $?
+}
+
+copy_config_files() {
+  local config_source="/config"
+  local config_dest="/home/gameserver/server-files/ShooterGame/Saved/Config/WindowsServer"
+
+  # Check if source directory exists
+  if [ ! -d "$config_source" ]; then
+    log_info "No /config directory found - skipping config import"
+    return 0
+  fi
+
+  # Check if destination directory exists (should exist after SteamCMD)
+  if [ ! -d "$config_dest" ]; then
+    log_warning "Config destination directory does not exist: $config_dest"
+    log_warning "Creating directory..."
+    mkdir -p "$config_dest"
+  fi
+
+  # Find all .ini files in /config
+  local ini_files=$(find "$config_source" -type f -name "*.ini" 2>/dev/null)
+
+  if [ -z "$ini_files" ]; then
+    log_info "No .ini files found in $config_source - skipping config import"
+    return 0
+  fi
+
+  log_info "Found .ini files in $config_source - starting import"
+
+  local copied_count=0
+  local skipped_count=0
+
+  # Process each INI file
+  while IFS= read -r ini_file; do
+    local filename=$(basename "$ini_file")
+    local dest_file="$config_dest/$filename"
+
+    log_info "Processing: $filename"
+
+    # Validate INI file
+    if validate_ini_file "$ini_file"; then
+      # Copy file (overwrite if exists)
+      cp -f "$ini_file" "$dest_file"
+      if [ $? -eq 0 ]; then
+        log_success "Copied: $filename -> $dest_file"
+        copied_count=$((copied_count + 1))
+      else
+        log_error "Failed to copy: $filename"
+        skipped_count=$((skipped_count + 1))
+      fi
+    else
+      log_warning "Skipped (invalid INI syntax): $filename"
+      skipped_count=$((skipped_count + 1))
+    fi
+  done <<< "$ini_files"
+
+  log_success "Config import complete: $copied_count copied, $skipped_count skipped"
+}
+
+# ============================================================================
 # Debug Mode Check
 # ============================================================================
 
@@ -266,6 +346,14 @@ if ! run_steamcmd_with_retry; then
   log_error "FATAL: Unable to download/update server files after all retry attempts"
   exit 203
 fi
+
+# ============================================================================
+# STAGE 4.5: Configuration File Import
+# ============================================================================
+
+log_stage "4.5" "Configuration File Import"
+log_info "Checking for user-provided configuration files in /config..."
+copy_config_files
 
 # ============================================================================
 # STAGE 5: Proton Installation

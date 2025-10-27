@@ -31,6 +31,11 @@ services:
       - server-files:/home/gameserver/server-files:rw
       - cluster-shared:/home/gameserver/cluster-shared:rw
       - /etc/localtime:/etc/localtime:ro
+      # Optional: Mount config directory for INI files (GameUserSettings.ini, Game.ini, etc.)
+      # Files are validated and copied to WindowsServer config directory on startup
+      # Uncomment one of the following options:
+      # - ./config:/config:ro              # Bind mount to local ./config directory
+      # - asa-config:/config:ro            # Named volume (define below in volumes section)
     networks:
       asa-network:
   set-permissions:

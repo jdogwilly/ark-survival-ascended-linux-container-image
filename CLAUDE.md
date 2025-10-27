@@ -103,6 +103,8 @@ The container includes two health check scripts for monitoring server status:
 ### Important Paths in Container
 
 - Server files: `/home/gameserver/server-files/`
+- Server configs: `/home/gameserver/server-files/ShooterGame/Saved/Config/WindowsServer/`
+- Config import source: `/config` (optional user mount)
 - Steam: `/home/gameserver/Steam/`
 - SteamCMD: `/home/gameserver/steamcmd/`
 - Cluster data: `/home/gameserver/cluster-shared/`
@@ -116,11 +118,12 @@ The container includes two health check scripts for monitoring server status:
 1. `start_server` script checks for debug mode (`ENABLE_DEBUG=1`)
 2. Downloads/validates SteamCMD if not present
 3. Installs/updates ASA server files via SteamCMD (AppID: 2430930)
-4. Downloads/validates Proton if not present (with SHA512 checksum)
-5. Initializes Proton compatibility layer (Wine prefix)
-6. Checks for mod configuration via `cli-asa-mods`
-7. Optionally installs ASA Server API plugin loader (if `AsaApi_*.zip` exists)
-8. Launches server through Proton (or AsaApiLoader if plugin loader is present)
+4. **STAGE 4.5**: Imports user-provided config files from `/config` (if mounted)
+5. Downloads/validates Proton if not present (with SHA512 checksum)
+6. Initializes Proton compatibility layer (Wine prefix)
+7. Checks for mod configuration via `cli-asa-mods`
+8. Optionally installs ASA Server API plugin loader (if `AsaApi_*.zip` exists)
+9. Launches server through Proton (or AsaApiLoader if plugin loader is present)
 
 ### `asa-ctrl` CLI Tool
 
@@ -143,6 +146,61 @@ Python-based tool for server administration (stdlib only, zero dependencies). Ar
 - Format: Array of `{mod_id: int, name: string, enabled: bool, scanned: bool}`
 - `cli-asa-mods` reads database and outputs `-mods=` parameter for enabled mods
 - Start parameter format: `-mods=12345,67891`
+
+### Configuration File Management
+
+The container supports automatic importing of configuration files from a mounted `/config` directory. This feature is implemented in STAGE 4.5 of the startup sequence.
+
+**Implementation Details:**
+
+- **Location**: `/usr/bin/start_server:37-111` (functions: `validate_ini_file()`, `copy_config_files()`)
+- **Execution**: STAGE 4.5, runs after SteamCMD download completes (line 354-356)
+- **Source**: `/config` (user-mounted directory)
+- **Destination**: `/home/gameserver/server-files/ShooterGame/Saved/Config/WindowsServer/`
+
+**Workflow:**
+1. Check if `/config` directory exists (non-fatal if missing)
+2. Recursively find all `.ini` files in `/config`
+3. Validate each file using Python's `configparser` (strict=False)
+4. Copy valid files to destination (always overwrites existing configs)
+5. Log each operation (copied/skipped) with reason
+6. Continue startup even if validation fails (non-blocking)
+
+**Functions:**
+- `validate_ini_file(ini_file)`: Uses Python configparser to validate INI syntax, returns exit code
+- `copy_config_files()`: Orchestrates discovery, validation, and copying of config files
+
+**Mount Options:**
+```yaml
+# Bind mount (recommended for version control)
+- ./config:/config:ro
+
+# Named volume (for persistent storage)
+- asa-config:/config:ro
+```
+
+**Supported Files:**
+- `GameUserSettings.ini` - Server settings, player limits, RCON config
+- `Game.ini` - Game rules, XP multipliers, taming speeds
+- Any other `.ini` files (custom mod configs, etc.)
+
+**Validation:**
+- Uses Python's `configparser.ConfigParser(strict=False)`
+- Non-strict mode allows duplicate keys (common in ARK configs)
+- Invalid files are logged as warnings and skipped
+- Server startup continues regardless of validation failures
+
+**Logging:**
+```bash
+# View import logs
+docker logs asa-server | grep -A 20 "STAGE 4.5"
+
+# Example output:
+# [INFO] Processing: GameUserSettings.ini
+# [SUCCESS] Copied: GameUserSettings.ini -> /home/gameserver/server-files/ShooterGame/Saved/Config/WindowsServer/GameUserSettings.ini
+# [WARNING] Skipped (invalid INI syntax): broken-config.ini
+# [SUCCESS] Config import complete: 2 copied, 1 skipped
+```
 
 ### RCON Implementation
 

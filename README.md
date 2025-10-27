@@ -165,6 +165,64 @@ The `GameUserSettings.ini` and `Game.ini` file can be found at `/var/lib/docker/
 
 You don't need to worry about file permissions. The `docker-compose.yml` is running a container before starting the ASA server and adjusts the file permissions to `25000:25000`, which is the user id and group id the server starts with. These ids are not bound to any user on your system and that's fine and not an issue.
 
+#### Alternative: Mounting Configuration Files
+
+Instead of editing config files in the Docker volume directly, you can mount a local directory containing your configuration files. The container will automatically copy all `.ini` files from `/config` to the server's configuration directory during startup.
+
+**Setting up config mounting:**
+
+1. Create a local directory to store your config files:
+```bash
+mkdir -p ~/asa-config
+```
+
+2. Place your `GameUserSettings.ini` and/or `Game.ini` files in this directory:
+```bash
+# Example: Create a basic GameUserSettings.ini
+cat > ~/asa-config/GameUserSettings.ini << 'EOF'
+[ServerSettings]
+SessionName=My ARK Server
+ServerAdminPassword=MySecurePassword
+RCONEnabled=True
+RCONPort=27020
+MaxPlayers=50
+EOF
+```
+
+3. Edit your `docker-compose.yml` and add the config volume mount (uncomment the appropriate line):
+```yml
+volumes:
+  - steam:/home/gameserver/Steam:rw
+  - steamcmd:/home/gameserver/steamcmd:rw
+  - server-files:/home/gameserver/server-files:rw
+  - cluster-shared:/home/gameserver/cluster-shared:rw
+  - /etc/localtime:/etc/localtime:ro
+  - ~/asa-config:/config:ro  # Add this line (adjust path as needed)
+```
+
+4. Restart your server to apply the configs:
+```bash
+docker compose up -d
+```
+
+**How it works:**
+- On every server start, the container scans `/config` for `.ini` files
+- Each file is validated to ensure proper INI syntax
+- Valid files are copied to `/home/gameserver/server-files/ShooterGame/Saved/Config/WindowsServer/`
+- Existing config files are always overwritten with your mounted versions
+- Invalid files are skipped with a warning in the logs
+
+**Benefits:**
+- Keep your configs in version control (e.g., Git)
+- Easily backup and restore server configurations
+- Share configs across multiple servers
+- No need to navigate Docker volumes manually
+
+**Viewing import logs:**
+```bash
+docker logs asa-server | grep -A 20 "STAGE 4.5"
+```
+
 ### 6. Changing the start parameters AND the player limit
 
 Start parameters are defined in the `docker-compose.yml`:
