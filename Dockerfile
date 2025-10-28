@@ -73,6 +73,8 @@ ARG LIBFREETYPE6_VERSION="2.13.2+dfsg-1build3"
 ARG PROCPS_VERSION="2:4.0.4-4ubuntu3.2"
 # renovate: suite=noble depName=locales
 ARG LOCALES_VERSION="2.39-0ubuntu8.6"
+# renovate: suite=noble depName=gettext-base
+ARG GETTEXT_BASE_VERSION="0.21-14ubuntu2"
 
 # Install runtime packages only with pinned versions (optimized layer ordering - rarely changes)
 RUN apt-get update && apt-get install -y \
@@ -84,6 +86,7 @@ RUN apt-get update && apt-get install -y \
     tar=${TAR_VERSION} \
     unzip=${UNZIP_VERSION} \
     ca-certificates=${CA_CERTS_VERSION} \
+    gettext-base=${GETTEXT_BASE_VERSION} \
     # ASA dependencies
     libfreetype6=${LIBFREETYPE6_VERSION} \
     # Health check utilities

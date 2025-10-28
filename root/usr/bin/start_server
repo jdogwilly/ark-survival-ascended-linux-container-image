@@ -373,7 +373,7 @@ MODS="$(/usr/local/bin/cli-asa-mods)"
 
 # Interpolate environment variables in ASA_START_PARAMS
 # This allows using ${ENV_VAR} syntax in start parameters for secrets
-ASA_START_PARAMS=$(eval echo "\"$ASA_START_PARAMS\"")
+ASA_START_PARAMS=$(envsubst <<< "$ASA_START_PARAMS")
 
 ASA_START_PARAMS="$ASA_START_PARAMS $MODS"
 ASA_BINARY_NAME="ArkAscendedServer.exe"
