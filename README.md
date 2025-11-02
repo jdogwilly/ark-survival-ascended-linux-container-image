@@ -264,7 +264,7 @@ E. g. if you want to change the game port from `7777` to `7755` your new start p
 ```yml
 ...
     environment:
-      - ASA_START_PARAMS=TheIsland_WP?listen?Port=7755?RCONPort=27020?RCONEnabled=True -WinLiveMaxPlayers=50 -clusterid=default -ClusterDirOverride="/home/gameserver/cluster-shared"
+      - ASA_START_PARAMS=TheIsland_WP?listen?Port=7755?RCONPort=27020?RCONEnabled=True -WinLiveMaxPlayers=50 -clusterid=default -ClusterDirOverride="Z:\cluster"
       - ENABLE_DEBUG=0
 ...
 ```
@@ -500,7 +500,7 @@ For example, add a second server that listens on port `7778`:
     image: "ghcr.io/jdogwilly/asa-linux-server:latest"
     tty: true
     environment:
-      - ASA_START_PARAMS=ScorchedEarth_WP?listen?Port=7778?RCONPort=27021?RCONEnabled=True -WinLiveMaxPlayers=50 -clusterid=default -ClusterDirOverride="/home/gameserver/cluster-shared"
+      - ASA_START_PARAMS=ScorchedEarth_WP?listen?Port=7778?RCONPort=27021?RCONEnabled=True -WinLiveMaxPlayers=50 -clusterid=default -ClusterDirOverride="Z:\cluster"
       - ENABLE_DEBUG=0
     ports:
       - 0.0.0.0:7778:7778/udp
@@ -511,7 +511,7 @@ For example, add a second server that listens on port `7778`:
       - steam-2:/home/gameserver/Steam:rw
       - steamcmd-2:/home/gameserver/steamcmd:rw
       - server-files-2:/home/gameserver/server-files:rw
-      - cluster-shared:/home/gameserver/cluster-shared:rw
+      - cluster-shared:/cluster:rw
       - /etc/localtime:/etc/localtime:ro
     networks:
       asa-network:

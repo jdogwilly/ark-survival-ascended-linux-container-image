@@ -37,5 +37,16 @@
       "depNameTemplate": "GloriousEggroll/proton-ge-custom",
       "extractVersionTemplate": "^GE-Proton(?<version>.+)$"
     }
+  ],
+  "packageRules": [
+    {
+      "description": "Auto-bump VERSION file for image-impacting changes",
+      "matchFileNames": ["Dockerfile", "root/**"],
+      "postUpgradeTasks": {
+        "commands": ["bash scripts/bump-version.sh"],
+        "fileFilters": ["VERSION"],
+        "executionMode": "branch"
+      }
+    }
   ]
 }
