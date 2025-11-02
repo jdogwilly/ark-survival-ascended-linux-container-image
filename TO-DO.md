@@ -243,18 +243,55 @@ This document tracks planned improvements and best practices to be implemented f
   - Documented for both Docker and Kubernetes deployments
 
 ### Logging Improvements
-- 📋 **Add structured logging**
-  - Currently: Bash script outputs to stdout ✅
-  - Consider: Adding log levels (INFO, WARN, ERROR)
-  - Consider: Timestamps on all log lines
-  - Keep stdout/stderr for Docker logs compatibility
+- ✅ **Add structured logging** ✅
+  - Implemented in `/usr/bin/start_server` (lines 7-31)
+  - Log levels: INFO, WARN, ERROR, SUCCESS, STAGE
+  - Timestamps on all log lines with `[$(date '+%Y-%m-%d %H:%M:%S')]` format
+  - Functions: `log_stage()`, `log_info()`, `log_success()`, `log_error()`, `log_warning()`
+  - Maintains stdout/stderr for Docker logs compatibility
+  - Implemented in commits: `eb32112` (Oct 24, 2024)
+
+### Configuration Management
+- ✅ **Config file import system (STAGE 4.5)** ✅
+  - Automatic `/config` directory mounting with INI validation
+  - Functions: `validate_ini_file()`, `copy_config_files()` in `/usr/bin/start_server` (lines 37-111)
+  - Python `configparser` validation (strict=False for duplicate keys)
+  - Recursively discovers and copies `.ini` files to server config directory
+  - Non-blocking: Server continues startup even if validation fails
+  - Logging: Reports each copied/skipped file with reason
+  - Supported files: `GameUserSettings.ini`, `Game.ini`, custom mod configs
+  - Mount point: `/config` (read-only recommended)
+  - Implemented in commits: `00043e1` (Oct 26, 2024)
+  - Documented in CLAUDE.md (lines 150-203) and README.md
+
+### Operational Reliability
+- ✅ **SteamCMD retry logic** ✅
+  - Configurable retry mechanism with max attempts and delays
+  - Environment variables: `STEAMCMD_MAX_RETRIES`, `STEAMCMD_RETRY_DELAY`, `STEAMCMD_AUTO_CLEANUP`
+  - Disk space validation before downloads
+  - Automatic cleanup on persistent failures
+  - Implemented in commits: `c93ddee` (Oct 24, 2024)
+
+- ✅ **Environment variable interpolation** ✅
+  - Support for secrets in `ASA_START_PARAMS` via environment variable substitution
+  - Allows secure handling of sensitive data (RCON passwords, admin tokens)
+  - Implemented in commits: `79c7db5` (Oct 29, 2024)
+
+- ✅ **Improved error handling** ✅
+  - Better failure recovery throughout startup sequence
+  - Stage-based error reporting with context
+  - Non-fatal warnings for optional features
+  - Implemented in commits: `294c213` (Oct 23, 2024)
 
 ### Testing Infrastructure
-- 📋 **Add automated testing framework**
-  - Unit tests for Python utilities (when migrated)
-  - Integration tests for server startup
-  - Smoke tests for RCON connectivity
-  - Consider: GitHub Actions test runner
+- ✅ **Add automated testing framework** ✅ (Partially Complete)
+  - ✅ Unit tests for Python utilities: 25/25 tests passing
+    - Test suite in `/usr/share/asa-ctrl/tests/`
+    - Run with: `uv run pytest` or `uv run pytest --cov=asa_ctrl`
+    - Coverage: RCON protocol, config parsing, mod management, CLI
+  - 📋 Integration tests for server startup (planned)
+  - 📋 Smoke tests for RCON connectivity (planned)
+  - 📋 GitHub Actions test runner (planned)
 
 ---
 
@@ -336,6 +373,11 @@ This document tracks planned improvements and best practices to be implemented f
 - ✅ CI/CD builds remain under 10 minutes
 - ✅ Documentation complete and up-to-date
 - ✅ Multi-stage build eliminates uv, source code, and build artifacts from final image
+- ✅ Configuration import system operational with INI validation
+- ✅ SteamCMD reliability improved with retry logic and disk space validation
+- ✅ Structured logging implemented with timestamps and severity levels
+- ✅ Environment variable interpolation for secure secrets management
+- ✅ Unit test coverage for Python utilities (25/25 tests passing)
 
 ---
 
@@ -347,5 +389,5 @@ This TO-DO.md file should be updated as items are completed:
 - Add new items as they're discovered
 - Review quarterly for priority adjustments
 
-**Last Updated**: 2025-10-22 (Phase 6: Health Checks - implemented Docker HEALTHCHECK and Kubernetes-ready probes)
-**Next Review**: 2026-01-20
+**Last Updated**: 2025-10-29 (Phase 6: Configuration Management, Operational Reliability, and Logging - added config import system, SteamCMD retry logic, structured logging, and environment variable interpolation)
+**Next Review**: 2026-04-29

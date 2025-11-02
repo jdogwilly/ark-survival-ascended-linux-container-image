@@ -16,7 +16,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv - the fast Python package installer (pinned version)
-COPY --from=ghcr.io/astral-sh/uv:0.9.5 /uv /usr/local/bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.9.7 /uv /usr/local/bin/uv
 
 # Copy only the Python package source code
 COPY root/usr/share/asa-ctrl /usr/share/asa-ctrl
