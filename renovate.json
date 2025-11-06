@@ -15,7 +15,7 @@
     {
       "customType": "regex",
       "description": "Update Debian/Ubuntu apt package versions in Dockerfile ARG statements",
-      "fileMatch": [
+      "managerFilePatterns": [
         "^Dockerfile$"
       ],
       "matchStrings": [
@@ -27,7 +27,7 @@
     {
       "customType": "regex",
       "description": "Track GloriousEggroll Proton-GE releases in start_server script",
-      "fileMatch": [
+      "managerFilePatterns": [
         "^root/usr/bin/start_server$"
       ],
       "matchStrings": [
