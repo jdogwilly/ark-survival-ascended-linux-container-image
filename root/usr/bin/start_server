@@ -475,4 +475,4 @@ log_info ""
 log_success "All initialization complete - launching ARK: Survival Ascended server!"
 log_info ""
 
-$STEAM_COMPAT_DIR/$PROTON_DIR_NAME/proton run $LAUNCH_BINARY_NAME $ASA_START_PARAMS
+exec $STEAM_COMPAT_DIR/$PROTON_DIR_NAME/proton run $LAUNCH_BINARY_NAME $ASA_START_PARAMS
