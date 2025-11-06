@@ -15,8 +15,8 @@
     {
       "customType": "regex",
       "description": "Update Debian/Ubuntu apt package versions in Dockerfile ARG statements",
-      "managerFilePatterns": [
-        "/^Dockerfile$/"
+      "fileMatch": [
+        "^Dockerfile$"
       ],
       "matchStrings": [
         "#\\s*renovate:\\s*suite=(?<suite>\\S+)\\s+depName=(?<depName>\\S+)\\s*\\nARG\\s+[A-Z0-9_]+=\"(?<currentValue>[^\"]+)\""
@@ -27,8 +27,8 @@
     {
       "customType": "regex",
       "description": "Track GloriousEggroll Proton-GE releases in start_server script",
-      "managerFilePatterns": [
-        "/^root/usr/bin/start_server$/"
+      "fileMatch": [
+        "^root/usr/bin/start_server$"
       ],
       "matchStrings": [
         "PROTON_VERSION=\"(?<currentValue>\\d+-\\d+)\""
