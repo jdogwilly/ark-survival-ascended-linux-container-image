@@ -422,14 +422,13 @@ fi
 
 log_stage "6" "Compatibility Layer Setup"
 
-# install proton compat game data
+# Create directory structure for Proton prefix but let Proton initialize it
 if [ ! -d "$ASA_COMPAT_DATA" ]; then
-  log_info "Creating Wine prefix for ARK: Survival Ascended..."
-  mkdir -p $STEAM_COMPAT_DATA
-  cp -r $STEAM_COMPAT_DIR/$PROTON_DIR_NAME/files/share/default_pfx $ASA_COMPAT_DATA
-  log_success "Wine prefix created at $ASA_COMPAT_DATA"
+  log_info "Creating directory structure for Wine prefix..."
+  mkdir -p "$ASA_COMPAT_DATA"
+  log_success "Directory created - Proton will initialize prefix on first run"
 else
-  log_success "Wine prefix already exists"
+  log_success "Prefix directory already exists"
 fi
 
 log_info "Setting up Proton environment variables..."
@@ -475,4 +474,4 @@ log_info ""
 log_success "All initialization complete - launching ARK: Survival Ascended server!"
 log_info ""
 
-exec $STEAM_COMPAT_DIR/$PROTON_DIR_NAME/proton run $LAUNCH_BINARY_NAME $ASA_START_PARAMS
+$STEAM_COMPAT_DIR/$PROTON_DIR_NAME/proton run $LAUNCH_BINARY_NAME $ASA_START_PARAMS
