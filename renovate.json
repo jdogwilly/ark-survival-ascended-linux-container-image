@@ -11,6 +11,9 @@
     ":dependencyDashboard",
     "helpers:pinGitHubActionDigests"
   ],
+  "allowedPostUpgradeCommands": [
+    "bash scripts/bump-version.sh"
+  ],
   "customManagers": [
     {
       "customType": "regex",
