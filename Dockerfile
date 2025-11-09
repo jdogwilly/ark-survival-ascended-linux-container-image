@@ -118,8 +118,14 @@ RUN apt-get update && apt-get install -y \
 RUN sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen && \
     locale-gen en_US.UTF-8
 
-# Generate machine-id for Wine/Proton compatibility (eliminates warning)
-RUN python3 -c "import uuid; print(uuid.uuid4().hex)" > /etc/machine-id
+# Fix Proton machine-id (prevents "unit test mode" errors)
+# Install dbus for dbus-uuidgen
+RUN apt-get update && apt-get install -y dbus && rm -rf /var/lib/apt/lists/*
+# Reset machine-id to force Proton reinitialization
+RUN rm -f /etc/machine-id && \
+    dbus-uuidgen --ensure=/etc/machine-id && \
+    rm -f /var/lib/dbus/machine-id && \
+    dbus-uuidgen --ensure
 
 # Create gameserver user and group with specific UID/GID (rarely changes)
 RUN groupadd -g 25000 gameserver && \

@@ -1,6 +1,32 @@
 #!/bin/bash
 
 # ============================================================================
+# Critical Proton Environment Variables (MUST be set early)
+# ============================================================================
+
+# Set up Proton environment variables (critical for compatibility)
+export SRCDS_APPID=2430930  # ARK: Survival Ascended App ID
+export SteamAppId=2430930
+export SteamGameId=2430930
+export STEAM_COMPAT_CLIENT_INSTALL_PATH="/home/gameserver/Steam"
+export STEAM_COMPAT_DATA_PATH="/home/gameserver/server-files/steamapps/compatdata/${SRCDS_APPID}"
+
+# Create compatdata directory structure
+mkdir -p "/home/gameserver/server-files/steamapps/compatdata/${SRCDS_APPID}"
+
+# Additional Proton environment fixes
+export PROTONFIXES_CONFIG_DIR="/home/gameserver/.config/protonfixes"
+mkdir -p "${PROTONFIXES_CONFIG_DIR}"
+
+# Disable ProtonFixes unit test mode
+export PROTONFIXES_DISABLE_PROTON_UNIT_TEST=0
+
+# XDG runtime directory (needed for various Linux services)
+export XDG_RUNTIME_DIR="/tmp/runtime-$(id -u)"
+mkdir -p "${XDG_RUNTIME_DIR}"
+chmod 700 "${XDG_RUNTIME_DIR}"
+
+# ============================================================================
 # Logging Helper Functions
 # ============================================================================
 
@@ -230,7 +256,7 @@ run_steamcmd_with_retry() {
 
     # Run SteamCMD and capture output
     cd /home/gameserver/steamcmd
-    ./steamcmd.sh +force_install_dir "$SERVER_FILES_DIR" +login anonymous +app_update 2430930 validate +quit 2>&1 | tee "$STEAMCMD_LOG"
+    ./steamcmd.sh +force_install_dir "$SERVER_FILES_DIR" +login anonymous +app_update 1007 +app_update 2430930 validate +quit 2>&1 | tee "$STEAMCMD_LOG"
     local exit_code="${PIPESTATUS[0]}"
 
     # Check if successful
