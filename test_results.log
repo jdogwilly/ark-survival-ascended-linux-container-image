@@ -1,0 +1,116 @@
+=========================================
+ARK Server Container Fix Validation Test
+=========================================
+
+[1/5] Cleaning up old test containers...
+[2/5] Starting container with fixes...
+e2b225de4f0224c2619aab786feb740d0e589d65953f4e0fd8375b0789197254
+[3/5] Waiting for container to initialize (10 seconds)...
+[4/5] Checking container logs for critical errors...
+
+=== CHECKING FOR UNIT TEST MODE ERROR ===
+✓ No unit test mode error found
+
+=== CHECKING FOR STEAM CLIENT LIBRARIES ===
+ls: cannot access '/home/gameserver/server-files/.steam/sdk32/steamclient.so': No such file or directory
+✗ 32-bit steamclient.so missing
+ls: cannot access '/home/gameserver/server-files/.steam/sdk64/steamclient.so': No such file or directory
+✗ 64-bit steamclient.so missing
+
+=== CHECKING ENVIRONMENT VARIABLES ===
+
+=== MONITORING SERVER STARTUP (30 seconds) ===
+Watching for server process...
+[1/30] ✗ Server process not found
+[2/30] ✗ Server process not found
+[3/30] ✗ Server process not found
+[4/30] ✗ Server process not found
+[5/30] ✗ Server process not found
+[6/30] ✗ Server process not found
+[7/30] ✗ Server process not found
+[8/30] ✗ Server process not found
+[9/30] ✗ Server process not found
+[10/30] ✗ Server process not found
+[11/30] ✗ Server process not found
+[12/30] ✗ Server process not found
+[13/30] ✗ Server process not found
+[14/30] ✗ Server process not found
+[15/30] ✗ Server process not found
+[16/30] ✗ Server process not found
+[17/30] ✗ Server process not found
+[18/30] ✗ Server process not found
+[19/30] ✗ Server process not found
+[20/30] ✗ Server process not found
+[21/30] ✗ Server process not found
+[22/30] ✗ Server process not found
+[23/30] ✗ Server process not found
+[24/30] ✗ Server process not found
+[25/30] ✗ Server process not found
+[26/30] ✗ Server process not found
+[27/30] ✗ Server process not found
+[28/30] ✗ Server process not found
+[29/30] ✗ Server process not found
+[30/30] ✗ Server process not found
+
+[5/5] Final status check...
+
+=== CONTAINER STATUS ===
+e2b225de4f02   asa-fixed:latest                              "/usr/bin/start_serv…"   42 seconds ago   Up 42 seconds (health: starting)             asa-fixed-test
+
+=== LAST 50 LINES OF LOGS ===
+  STAGE 2: SteamCMD Setup
+================================================================================
+
+[2025-11-09 02:48:08] [INFO] SteamCMD not found - downloading installer...
+--2025-11-09 02:48:08--  https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz
+Resolving steamcdn-a.akamaihd.net (steamcdn-a.akamaihd.net)... 23.32.75.135, 23.32.75.150
+Connecting to steamcdn-a.akamaihd.net (steamcdn-a.akamaihd.net)|23.32.75.135|:443... connected.
+HTTP request sent, awaiting response... 200 OK
+Length: 2428561 (2.3M) [application/octet-stream]
+steamcmd_linux.tar.gz: Permission denied
+
+Cannot write to ‘steamcmd_linux.tar.gz’ (Success).
+[2025-11-09 02:48:08] [INFO] Extracting SteamCMD...
+tar (child): steamcmd_linux.tar.gz: Cannot open: No such file or directory
+tar (child): Error is not recoverable: exiting now
+tar: Child returned status 2
+tar: Error is not recoverable: exiting now
+[2025-11-09 02:48:08] [SUCCESS] ✓ SteamCMD installed successfully
+
+================================================================================
+  STAGE 3: Disk Space Verification
+================================================================================
+
+[2025-11-09 02:48:08] [INFO] Checking available disk space...
+[2025-11-09 02:48:08] [INFO] Available: 292GB | Required: 15GB
+[2025-11-09 02:48:08] [SUCCESS] ✓ Disk space check passed (292GB available)
+
+================================================================================
+  STAGE 4: Server Files Download/Update
+================================================================================
+
+[2025-11-09 02:48:08] [INFO] Downloading/updating ARK: Survival Ascended server files (AppID: 2430930)
+[2025-11-09 02:48:08] [INFO] This may take a while depending on your internet connection...
+[2025-11-09 02:48:08] [INFO] Starting SteamCMD download/update (max retries: 10)
+[2025-11-09 02:48:08] [INFO] Attempt 1 of 10
+/usr/bin/start_server: line 259: ./steamcmd.sh: No such file or directory
+[2025-11-09 02:48:08] [WARNING] ! SteamCMD exited with code: 127
+[2025-11-09 02:48:08] [INFO] Waiting 5s before retry...
+[2025-11-09 02:48:13] [INFO] Attempt 2 of 10
+/usr/bin/start_server: line 259: ./steamcmd.sh: No such file or directory
+[2025-11-09 02:48:13] [WARNING] ! SteamCMD exited with code: 127
+[2025-11-09 02:48:13] [INFO] Waiting 10s before retry...
+[2025-11-09 02:48:23] [INFO] Attempt 3 of 10
+/usr/bin/start_server: line 259: ./steamcmd.sh: No such file or directory
+[2025-11-09 02:48:23] [WARNING] ! SteamCMD exited with code: 127
+[2025-11-09 02:48:23] [INFO] Waiting 15s before retry...
+[2025-11-09 02:48:38] [INFO] Attempt 4 of 10
+/usr/bin/start_server: line 259: ./steamcmd.sh: No such file or directory
+[2025-11-09 02:48:38] [WARNING] ! SteamCMD exited with code: 127
+[2025-11-09 02:48:38] [INFO] Waiting 20s before retry...
+
+=========================================
+Test complete! Review the output above.
+To view full logs: docker logs asa-fixed-test
+To stop test: docker stop asa-fixed-test && docker rm asa-fixed-test
+=========================================
