@@ -76,6 +76,9 @@ ARG LOCALES_VERSION="2.39-0ubuntu8.6"
 # renovate: suite=noble depName=gettext-base
 ARG GETTEXT_BASE_VERSION="0.21-14ubuntu2"
 
+# Enable 32-bit architecture support (required for Wine/Proton)
+RUN dpkg --add-architecture i386
+
 # Install runtime packages only with pinned versions (optimized layer ordering - rarely changes)
 RUN apt-get update && apt-get install -y \
     # 32-bit library support for Steam/Proton
@@ -93,14 +96,36 @@ RUN apt-get update && apt-get install -y \
     procps=${PROCPS_VERSION} \
     # Locale support for SteamCMD
     locales=${LOCALES_VERSION} \
+    # 32-bit multimedia libraries for Wine/Proton (required for Steam API)
+    gstreamer1.0-plugins-base:i386 \
+    gstreamer1.0-plugins-good:i386 \
+    gstreamer1.0-plugins-bad:i386 \
+    gstreamer1.0-libav:i386 \
+    libgstreamer1.0-0:i386 \
+    libgstreamer-plugins-base1.0-0:i386 \
+    # Audio libraries
+    libasound2:i386 \
+    libpulse0:i386 \
+    # Additional libraries commonly needed
+    libgnutls30:i386 \
+    libgl1-mesa-dri:i386 \
+    libglx-mesa0:i386 \
+    # SDL2 for input/controller support
+    libsdl2-2.0-0:i386 \
     && rm -rf /var/lib/apt/lists/*
 
 # Generate en_US.UTF-8 locale for SteamCMD
 RUN sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen && \
     locale-gen en_US.UTF-8
 
-# Generate machine-id for Wine/Proton compatibility (eliminates warning)
-RUN python3 -c "import uuid; print(uuid.uuid4().hex)" > /etc/machine-id
+# Fix Proton machine-id (prevents "unit test mode" errors)
+# Install dbus for dbus-uuidgen
+RUN apt-get update && apt-get install -y dbus && rm -rf /var/lib/apt/lists/*
+# Reset machine-id to force Proton reinitialization
+RUN rm -f /etc/machine-id && \
+    dbus-uuidgen --ensure=/etc/machine-id && \
+    rm -f /var/lib/dbus/machine-id && \
+    dbus-uuidgen --ensure
 
 # Create gameserver user and group with specific UID/GID (rarely changes)
 RUN groupadd -g 25000 gameserver && \

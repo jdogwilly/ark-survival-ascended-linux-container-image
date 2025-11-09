@@ -6,18 +6,26 @@ services:
     image: "ghcr.io/jdogwilly/asa-linux-server:latest"
     tty: true
     environment:
-      # Server start parameters (map, ports, cluster config)
-      - ASA_START_PARAMS=TheIsland_WP?listen?Port=7777?RCONPort=27020?RCONEnabled=True -WinLiveMaxPlayers=50 -clusterid=default -ClusterDirOverride="Z:\cluster"
+      # Using environment variables like Helm chart for better compatibility
+      - MAP=TheIsland_WP
+      - SESSION_NAME=Test ARK Server
+      - GAME_PORT=7777
+      - RCON_PORT=27020
+      - SERVER_PASSWORD=""
+      - ADMIN_PASSWORD=testadmin123
+      - MAX_PLAYERS=50
+      - CLUSTER_ID=test-cluster
 
-      # RCON Configuration (Optional - Kubernetes/Production style)
-      # These env vars take priority over ASA_START_PARAMS for RCON config
-      # Uncomment to use environment variables instead of ASA_START_PARAMS
-      # - ADMIN_PASSWORD=YourSecureAdminPassword
-      # - RCON_PORT=27020
-      # - RCON_ENABLED=true
+      # Server start parameters (uses env var interpolation via envsubst)
+      - ASA_START_PARAMS=${MAP}?listen?Port=${GAME_PORT}?RCONPort=${RCON_PORT}?RCONEnabled=True?ServerAdminPassword=${ADMIN_PASSWORD} -WinLiveMaxPlayers=${MAX_PLAYERS} -clusterid=${CLUSTER_ID} -ClusterDirOverride="Z:\cluster"
 
       # Debug mode (0=disabled, 1=enabled - sleeps instead of starting server)
       - ENABLE_DEBUG=0
+    ulimits:
+      # ARK requires 100,000+ open files for proper operation
+      nofile:
+        soft: 100000
+        hard: 100000
     ports:
       # Game port for player connections through the server browser
       - 0.0.0.0:7777:7777/udp
