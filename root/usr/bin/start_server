@@ -356,12 +356,53 @@ log_info "Checking for user-provided configuration files in /config..."
 copy_config_files
 
 # ============================================================================
+# STAGE 4.6: Steam Client Libraries Installation
+# ============================================================================
+
+log_stage "4.6" "Steam Client Libraries Installation (Critical Fix)"
+log_info "Installing Steam Linux Runtime (App 1007) and client libraries..."
+log_info "This is required for ARK server to initialize Steam API properly"
+
+# Download Steam Linux Runtime
+cd /home/gameserver/steamcmd
+log_info "Downloading Steam Linux Runtime..."
+./steamcmd.sh +force_install_dir /home/gameserver/server-files +login anonymous +app_update 1007 +quit
+
+# Create the required .steam directory structure
+log_info "Setting up Steam client library directories..."
+mkdir -p /home/gameserver/server-files/.steam/sdk32
+mkdir -p /home/gameserver/server-files/.steam/sdk64
+
+# Copy steamclient.so files (critical for Steam API)
+if [ -f "/home/gameserver/steamcmd/linux32/steamclient.so" ]; then
+  cp /home/gameserver/steamcmd/linux32/steamclient.so /home/gameserver/server-files/.steam/sdk32/
+  log_success "Copied 32-bit steamclient.so"
+else
+  log_warning "32-bit steamclient.so not found"
+fi
+
+if [ -f "/home/gameserver/steamcmd/linux64/steamclient.so" ]; then
+  cp /home/gameserver/steamcmd/linux64/steamclient.so /home/gameserver/server-files/.steam/sdk64/
+  log_success "Copied 64-bit steamclient.so"
+else
+  log_warning "64-bit steamclient.so not found"
+fi
+
+# Also create symlinks in the Steam directory for compatibility
+mkdir -p /home/gameserver/Steam/.steam/sdk32
+mkdir -p /home/gameserver/Steam/.steam/sdk64
+ln -sf /home/gameserver/steamcmd/linux32/steamclient.so /home/gameserver/Steam/.steam/sdk32/steamclient.so 2>/dev/null || true
+ln -sf /home/gameserver/steamcmd/linux64/steamclient.so /home/gameserver/Steam/.steam/sdk64/steamclient.so 2>/dev/null || true
+
+log_success "Steam client libraries installation complete"
+
+# ============================================================================
 # STAGE 5: Proton Installation
 # ============================================================================
 
 log_stage "5" "Proton Installation"
 
-PROTON_VERSION="10-17"
+PROTON_VERSION="10-25"
 PROTON_DIR_NAME="GE-Proton$PROTON_VERSION"
 PROTON_ARCHIVE_NAME="$PROTON_DIR_NAME.tar.gz"
 STEAM_COMPAT_DATA=/home/gameserver/server-files/steamapps/compatdata
@@ -371,17 +412,37 @@ ASA_BINARY_DIR="/home/gameserver/server-files/ShooterGame/Binaries/Win64"
 START_PARAMS_FILE="/home/gameserver/server-files/start-parameters"
 MODS="$(/usr/local/bin/cli-asa-mods)"
 
+# Debug: Show raw ASA_START_PARAMS before expansion
+log_info "Raw ASA_START_PARAMS (before expansion): $ASA_START_PARAMS"
+
+# List available environment variables for debugging
+log_info "Available environment variables for expansion:"
+log_info "  MAP=$MAP"
+log_info "  SESSION_NAME=$SESSION_NAME"
+log_info "  GAME_PORT=$GAME_PORT"
+log_info "  RCON_PORT=$RCON_PORT"
+log_info "  SERVER_PASSWORD=$SERVER_PASSWORD"
+log_info "  ADMIN_PASSWORD=(set but hidden)"
+log_info "  MAX_PLAYERS=$MAX_PLAYERS"
+log_info "  CLUSTER_ID=$CLUSTER_ID"
+
 # Interpolate environment variables in ASA_START_PARAMS
 # This allows using ${ENV_VAR} syntax in start parameters for secrets
 ASA_START_PARAMS=$(envsubst <<< "$ASA_START_PARAMS")
 
+# Debug: Show expanded ASA_START_PARAMS
+log_info "Expanded ASA_START_PARAMS (after envsubst): $ASA_START_PARAMS"
+
+# Add mods to the parameters
 ASA_START_PARAMS="$ASA_START_PARAMS $MODS"
+log_info "Final ASA_START_PARAMS (with mods): $ASA_START_PARAMS"
 ASA_BINARY_NAME="ArkAscendedServer.exe"
 ASA_PLUGIN_BINARY_NAME="AsaApiLoader.exe"
 ASA_PLUGIN_LOADER_ARCHIVE_NAME=$(basename $ASA_BINARY_DIR/AsaApi_*.zip)
 ASA_PLUGIN_LOADER_ARCHIVE_PATH="$ASA_BINARY_DIR/$ASA_PLUGIN_LOADER_ARCHIVE_NAME"
 ASA_PLUGIN_BINARY_PATH="$ASA_BINARY_DIR/$ASA_PLUGIN_BINARY_NAME"
-LAUNCH_BINARY_NAME="$ASA_BINARY_NAME"
+# Default to full path of standard binary
+LAUNCH_BINARY_PATH="$ASA_BINARY_DIR/$ASA_BINARY_NAME"
 
 log_info "Proton version: GE-Proton$PROTON_VERSION"
 
@@ -431,11 +492,123 @@ else
   log_success "Prefix directory already exists"
 fi
 
+# Setup Wine drive mappings for cluster directory
+WINE_DOSDEVICES="$ASA_COMPAT_DATA/pfx/dosdevices"
+if [ -d "/cluster" ]; then
+  log_info "Setting up Wine drive mappings for cluster directory..."
+  mkdir -p "$WINE_DOSDEVICES"
+  # Create Z: drive mapping to /cluster for cluster transfers
+  # This allows -ClusterDirOverride="Z:\cluster" to work correctly
+  if [ ! -L "$WINE_DOSDEVICES/z:" ]; then
+    ln -sf /cluster "$WINE_DOSDEVICES/z:"
+    log_success "Created Z: drive mapping to /cluster"
+  else
+    log_success "Z: drive mapping already exists"
+  fi
+else
+  log_info "Cluster directory /cluster not mounted - skipping drive mapping"
+fi
+
 log_info "Setting up Proton environment variables..."
-export XDG_RUNTIME_DIR=/run/user/$(id -u)
+# Create XDG_RUNTIME_DIR if it doesn't exist
+export XDG_RUNTIME_DIR=/tmp/runtime-gameserver
+mkdir -p "$XDG_RUNTIME_DIR"
+chmod 0700 "$XDG_RUNTIME_DIR"
 export STEAM_COMPAT_CLIENT_INSTALL_PATH=/home/gameserver/Steam
 export STEAM_COMPAT_DATA_PATH=$ASA_COMPAT_DATA
+
+# Disable ESYNC/FSYNC for stability in containerized environment
+export PROTON_NO_ESYNC="${PROTON_NO_ESYNC:-1}"
+export PROTON_NO_FSYNC="${PROTON_NO_FSYNC:-1}"
+
+# Enable Proton logging for debugging
+export PROTON_LOG="${PROTON_LOG:-1}"
+export PROTON_LOG_DIR="${PROTON_LOG_DIR:-/home/gameserver/server-files}"
+export PROTON_DUMP_DEBUG_COMMANDS="${PROTON_DUMP_DEBUG_COMMANDS:-1}"
+
+# Enhanced Wine debugging (can be overridden by env var)
+# Default: Show DLL loading, module events, errors, and timestamps
+# Use WINEDEBUG=+all for maximum verbosity (very noisy)
+if [ -z "$WINEDEBUG" ]; then
+  # Focused debugging for startup issues
+  export WINEDEBUG="-all,+loaddll,+module,+seh,+err,+timestamp"
+  log_info "Wine debug flags: $WINEDEBUG (focused on DLL loading)"
+else
+  log_info "Wine debug flags: $WINEDEBUG (user-defined)"
+fi
+
+# Additional Steam environment variables for better compatibility
+export SteamAppId=2430930
+export SteamGameId=2430930
+
 log_success "Environment configured"
+log_info "Proton sync disabled: ESYNC=$PROTON_NO_ESYNC, FSYNC=$PROTON_NO_FSYNC"
+log_info "Debug logging enabled: PROTON_LOG=$PROTON_LOG, WINEDEBUG set"
+
+# ============================================================================
+# STAGE 6.5: Windows Runtime Dependencies
+# ============================================================================
+
+log_stage "6.5" "Windows Runtime Dependencies"
+
+# Create steam_appid.txt for Steam API
+STEAM_APPID_FILE="/home/gameserver/server-files/steam_appid.txt"
+if [ ! -f "$STEAM_APPID_FILE" ]; then
+  log_info "Creating steam_appid.txt for Steam API..."
+  echo "2430930" > "$STEAM_APPID_FILE"
+  log_success "steam_appid.txt created (AppID: 2430930)"
+else
+  log_success "steam_appid.txt already exists"
+fi
+
+# Initialize Wine prefix explicitly if it doesn't exist
+if [ ! -d "$ASA_COMPAT_DATA/pfx/drive_c" ]; then
+  log_info "Initializing Proton Wine prefix..."
+  $STEAM_COMPAT_DIR/$PROTON_DIR_NAME/proton run wineboot --init 2>&1 | grep -v "ProtonFixes" || true
+  sleep 5
+  log_success "Wine prefix initialized"
+else
+  log_success "Wine prefix already initialized"
+fi
+
+# Install Visual C++ Redistributables if not already installed
+VCREDIST_MARKER="$ASA_COMPAT_DATA/pfx/.vcredist_2019_installed"
+if [ ! -f "$VCREDIST_MARKER" ]; then
+  log_info "Installing Visual C++ 2019 Redistributables (required for many Windows apps)..."
+
+  # Download Visual C++ 2019 Redistributable
+  if wget -q -O /tmp/vc_redist.x64.exe "https://aka.ms/vs/17/release/vc_redist.x64.exe"; then
+    log_info "Downloaded vcredist, installing..."
+
+    # Install via Proton
+    if $STEAM_COMPAT_DIR/$PROTON_DIR_NAME/proton run /tmp/vc_redist.x64.exe /quiet /norestart 2>&1 | grep -v "ProtonFixes"; then
+      log_success "Visual C++ Redistributables installed successfully"
+      touch "$VCREDIST_MARKER"
+    else
+      log_warning "vcredist installation had warnings - server may still work"
+      # Mark as attempted so we don't retry every time
+      touch "$VCREDIST_MARKER"
+    fi
+
+    rm -f /tmp/vc_redist.x64.exe
+  else
+    log_warning "Failed to download vcredist - server may still work without it"
+    # Mark as attempted
+    touch "$VCREDIST_MARKER"
+  fi
+else
+  log_success "Visual C++ Redistributables already installed"
+fi
+
+# Create ShooterGame/Binaries/Win64/steam_appid.txt as well (some servers check here)
+ALT_STEAM_APPID_FILE="$ASA_BINARY_DIR/steam_appid.txt"
+if [ ! -f "$ALT_STEAM_APPID_FILE" ]; then
+  log_info "Creating steam_appid.txt in binary directory..."
+  echo "2430930" > "$ALT_STEAM_APPID_FILE"
+  log_success "Alternative steam_appid.txt created"
+fi
+
+log_info "Windows runtime setup complete"
 
 # ============================================================================
 # STAGE 7: Plugin Installation (Optional)
@@ -443,23 +616,28 @@ log_success "Environment configured"
 
 log_stage "7" "Plugin Installation (Optional)"
 
-cd "$ASA_BINARY_DIR"
+# Don't change working directory - ARK expects to run from server root
+# cd "$ASA_BINARY_DIR" # <-- REMOVED: This breaks relative path resolution
 
 # unzip the asa plugin api archive if it exists. delete it afterwards
 if [ -f "$ASA_PLUGIN_LOADER_ARCHIVE_PATH" ]; then
   log_info "ASA Server API plugin archive detected: $ASA_PLUGIN_LOADER_ARCHIVE_NAME"
   log_info "Extracting plugin loader..."
-  unzip -o $ASA_PLUGIN_LOADER_ARCHIVE_NAME
-  rm $ASA_PLUGIN_LOADER_ARCHIVE_NAME
+  # Extract to the binary directory without changing to it
+  unzip -o "$ASA_PLUGIN_LOADER_ARCHIVE_PATH" -d "$ASA_BINARY_DIR"
+  rm "$ASA_PLUGIN_LOADER_ARCHIVE_PATH"
   log_success "Plugin loader extracted"
 fi
 
 if [ -f "$ASA_PLUGIN_BINARY_PATH" ]; then
   log_success "ASA Server API loader detected"
   log_info "Server will launch through $ASA_PLUGIN_BINARY_NAME"
-  LAUNCH_BINARY_NAME="$ASA_PLUGIN_BINARY_NAME"
+  # Use full path to plugin binary
+  LAUNCH_BINARY_PATH="$ASA_PLUGIN_BINARY_PATH"
 else
   log_info "No plugins detected - using standard server binary"
+  # Use full path to standard binary
+  LAUNCH_BINARY_PATH="$ASA_BINARY_DIR/$ASA_BINARY_NAME"
 fi
 
 # ============================================================================
@@ -468,10 +646,159 @@ fi
 
 log_stage "8" "Server Launch"
 
-log_info "Launch binary: $LAUNCH_BINARY_NAME"
+# Ensure we're in the correct working directory for server launch
+# Wine needs to be able to map the working directory properly
+# Use server-files directory which is part of the Proton prefix mapping
+cd /home/gameserver/server-files
+
+# Setup signal handling for graceful shutdown
+graceful_shutdown() {
+    log_info "[$(date -Iseconds)] Received shutdown signal - initiating graceful shutdown..."
+
+    # Try to save the world via RCON if available
+    if [ -n "$ADMIN_PASSWORD" ] && [ -n "$RCON_PORT" ]; then
+        log_info "Attempting to save world via RCON..."
+        /usr/local/bin/asa-ctrl rcon --exec "SaveWorld" 2>/dev/null || log_warning "Failed to save via RCON"
+        sleep 5
+        log_info "Sending DoExit command..."
+        /usr/local/bin/asa-ctrl rcon --exec "DoExit" 2>/dev/null || log_warning "Failed to send DoExit via RCON"
+        sleep 10
+    fi
+
+    # Kill the ARK process if it's still running
+    if [ -n "$ARK_PID" ] && kill -0 "$ARK_PID" 2>/dev/null; then
+        log_info "Sending SIGTERM to ARK server process..."
+        kill -TERM "$ARK_PID"
+
+        # Wait up to 30 seconds for graceful shutdown
+        for i in $(seq 1 30); do
+            if ! kill -0 "$ARK_PID" 2>/dev/null; then
+                log_success "ARK server shut down gracefully"
+                break
+            fi
+            sleep 1
+        done
+
+        # Force kill if still running
+        if kill -0 "$ARK_PID" 2>/dev/null; then
+            log_warning "ARK server did not shut down gracefully - forcing termination"
+            kill -KILL "$ARK_PID"
+        fi
+    fi
+
+    log_info "[$(date -Iseconds)] Shutdown complete"
+    exit 0
+}
+
+# Trap SIGTERM and SIGINT for graceful shutdown
+trap graceful_shutdown SIGTERM SIGINT
+
+log_info "Launch binary: $LAUNCH_BINARY_PATH"
 log_info "Start parameters: $ASA_START_PARAMS"
+log_info "Working directory: $(pwd)"
 log_info ""
 log_success "All initialization complete - launching ARK: Survival Ascended server!"
 log_info ""
 
-$STEAM_COMPAT_DIR/$PROTON_DIR_NAME/proton run $LAUNCH_BINARY_NAME $ASA_START_PARAMS
+# Create log directory if it doesn't exist
+LOG_DIR="/home/gameserver/server-files/ShooterGame/Saved/Logs"
+mkdir -p "$LOG_DIR"
+
+# Launch server in background and capture PID
+log_info "Starting ARK server in background..."
+# Use relative path from server-files directory (like Pelican does)
+if [ -f "$ASA_PLUGIN_BINARY_PATH" ]; then
+  # Launch through plugin loader
+  $STEAM_COMPAT_DIR/$PROTON_DIR_NAME/proton run ./ShooterGame/Binaries/Win64/AsaApiLoader.exe $ASA_START_PARAMS &
+else
+  # Launch standard server
+  $STEAM_COMPAT_DIR/$PROTON_DIR_NAME/proton run ./ShooterGame/Binaries/Win64/ArkAscendedServer.exe $ASA_START_PARAMS &
+fi
+ARK_PID=$!
+
+log_success "ARK server launched with PID: $ARK_PID"
+
+# Give the server a moment to start up and create log files
+sleep 10
+
+# Wait for RCON to become available (if configured)
+if [ -n "$ADMIN_PASSWORD" ] && [ -n "$RCON_PORT" ]; then
+    log_info "Waiting for RCON to become available..."
+
+    MAX_RCON_ATTEMPTS=120  # 120 attempts * 5 seconds = 10 minutes max wait
+    RCON_ATTEMPT=0
+    RCON_READY=false
+
+    while [ $RCON_ATTEMPT -lt $MAX_RCON_ATTEMPTS ]; do
+        RCON_ATTEMPT=$((RCON_ATTEMPT + 1))
+
+        # Check if server process is still running
+        if ! kill -0 "$ARK_PID" 2>/dev/null; then
+            log_error "ARK server process died while waiting for RCON"
+            exit 1
+        fi
+
+        # Try to execute a simple RCON command
+        if /usr/local/bin/asa-ctrl rcon --exec "help" >/dev/null 2>&1; then
+            RCON_READY=true
+            log_success "RCON is ready after $((RCON_ATTEMPT * 5)) seconds"
+
+            # Show server info
+            log_info "Server is accepting RCON connections on port $RCON_PORT"
+            /usr/local/bin/asa-ctrl rcon --exec "ListPlayers" 2>/dev/null || true
+            break
+        else
+            if [ $((RCON_ATTEMPT % 12)) -eq 0 ]; then
+                # Log progress every minute
+                log_info "Still waiting for RCON... ($((RCON_ATTEMPT * 5)) seconds elapsed)"
+            fi
+            sleep 5
+        fi
+    done
+
+    if [ "$RCON_READY" = "false" ]; then
+        log_warning "RCON did not become available after $((MAX_RCON_ATTEMPTS * 5)) seconds"
+        log_warning "Server may still be starting or RCON may be disabled"
+    fi
+else
+    log_info "RCON not configured - skipping readiness check"
+fi
+
+# Find and tail the server log
+LOG_FILE="$LOG_DIR/ShooterGame.log"
+if [ -f "$LOG_FILE" ]; then
+    log_info "Tailing server log: $LOG_FILE"
+    log_info "=========================================="
+
+    # Tail the log and wait for the ARK process to end
+    tail -f "$LOG_FILE" --pid=$ARK_PID &
+    TAIL_PID=$!
+
+    # Wait for the ARK server process
+    wait $ARK_PID
+    EXIT_CODE=$?
+
+    # Kill tail process if still running
+    kill $TAIL_PID 2>/dev/null || true
+
+    if [ $EXIT_CODE -eq 0 ]; then
+        log_success "ARK server exited normally (exit code: $EXIT_CODE)"
+    else
+        log_error "ARK server exited with error (exit code: $EXIT_CODE)"
+    fi
+else
+    log_warning "Server log not found at expected location: $LOG_FILE"
+    log_info "Waiting for ARK server process..."
+
+    # Just wait for the process if we can't find the log
+    wait $ARK_PID
+    EXIT_CODE=$?
+
+    if [ $EXIT_CODE -eq 0 ]; then
+        log_success "ARK server exited normally (exit code: $EXIT_CODE)"
+    else
+        log_error "ARK server exited with error (exit code: $EXIT_CODE)"
+    fi
+fi
+
+exit $EXIT_CODE

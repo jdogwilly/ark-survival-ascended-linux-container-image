@@ -76,6 +76,9 @@ ARG LOCALES_VERSION="2.39-0ubuntu8.6"
 # renovate: suite=noble depName=gettext-base
 ARG GETTEXT_BASE_VERSION="0.21-14ubuntu2"
 
+# Enable 32-bit architecture support (required for Wine/Proton)
+RUN dpkg --add-architecture i386
+
 # Install runtime packages only with pinned versions (optimized layer ordering - rarely changes)
 RUN apt-get update && apt-get install -y \
     # 32-bit library support for Steam/Proton
@@ -93,6 +96,22 @@ RUN apt-get update && apt-get install -y \
     procps=${PROCPS_VERSION} \
     # Locale support for SteamCMD
     locales=${LOCALES_VERSION} \
+    # 32-bit multimedia libraries for Wine/Proton (required for Steam API)
+    gstreamer1.0-plugins-base:i386 \
+    gstreamer1.0-plugins-good:i386 \
+    gstreamer1.0-plugins-bad:i386 \
+    gstreamer1.0-libav:i386 \
+    libgstreamer1.0-0:i386 \
+    libgstreamer-plugins-base1.0-0:i386 \
+    # Audio libraries
+    libasound2:i386 \
+    libpulse0:i386 \
+    # Additional libraries commonly needed
+    libgnutls30:i386 \
+    libgl1-mesa-dri:i386 \
+    libglx-mesa0:i386 \
+    # SDL2 for input/controller support
+    libsdl2-2.0-0:i386 \
     && rm -rf /var/lib/apt/lists/*
 
 # Generate en_US.UTF-8 locale for SteamCMD
