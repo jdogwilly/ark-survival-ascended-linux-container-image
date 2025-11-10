@@ -745,6 +745,22 @@ log_info ""
 log_success "All initialization complete - launching ARK: Survival Ascended server!"
 log_info ""
 
+# Remove problematic steamclient64.dll if present
+# This DLL causes crashes with Proton on Linux (see issue #123)
+STEAMCLIENT_DLL="$ASA_BINARY_DIR/steamclient64.dll"
+if [ -f "$STEAMCLIENT_DLL" ]; then
+  log_warning "Found steamclient64.dll - removing to prevent Proton crashes"
+  rm -f "$STEAMCLIENT_DLL"
+  if [ $? -eq 0 ]; then
+    log_success "Removed steamclient64.dll successfully"
+  else
+    log_error "Failed to remove steamclient64.dll - server may crash on startup"
+  fi
+else
+  log_info "steamclient64.dll not present (expected)"
+fi
+log_info ""
+
 # Create log directory if it doesn't exist
 LOG_DIR="/home/gameserver/server-files/ShooterGame/Saved/Logs"
 mkdir -p "$LOG_DIR"
