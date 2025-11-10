@@ -1,4 +1,3 @@
-version: "3.3"
 services:
   asa-server:
     container_name: asa-server
@@ -6,21 +5,22 @@ services:
     image: "ghcr.io/jdogwilly/asa-linux-server:latest"
     tty: true
     environment:
-      # Using environment variables like Helm chart for better compatibility
-      - MAP=TheIsland_WP
-      - SESSION_NAME=Test ARK Server
-      - GAME_PORT=7777
-      - RCON_PORT=27020
-      - SERVER_PASSWORD=""
+      # RCON configuration (used by asa-ctrl for server management)
       - ADMIN_PASSWORD=testadmin123
-      - MAX_PLAYERS=50
-      - CLUSTER_ID=test-cluster
+      - RCON_PORT=27020
 
-      # Server start parameters (uses env var interpolation via envsubst)
-      - ASA_START_PARAMS=${MAP}?listen?Port=${GAME_PORT}?RCONPort=${RCON_PORT}?RCONEnabled=True?ServerAdminPassword=${ADMIN_PASSWORD} -WinLiveMaxPlayers=${MAX_PLAYERS} -clusterid=${CLUSTER_ID} -ClusterDirOverride="Z:\cluster"
+      # Server start parameters (simple literal values for testing)
+      - ASA_START_PARAMS=TheIsland_WP?listen?Port=7777?RCONPort=27020?RCONEnabled=True?ServerAdminPassword=testadmin123 -WinLiveMaxPlayers=50 -clusterid=test-cluster -ClusterDirOverride="Z:\cluster"
 
       # Debug mode (0=disabled, 1=enabled - sleeps instead of starting server)
       - ENABLE_DEBUG=0
+
+      # Crash watchdog (automatic restart on crash)
+      # Enable auto-restart when server crashes (useful for game-side bugs)
+      - ENABLE_CRASH_WATCHDOG=1              # Enable auto-restart (default: 0)
+      - WATCHDOG_MAX_RESTARTS=10             # Max consecutive restarts (default: 10)
+      - WATCHDOG_RESTART_DELAY=30            # Base delay between restarts in seconds (default: 30)
+      - WATCHDOG_CHECK_INTERVAL=30           # Process check interval in seconds (default: 30)
     ulimits:
       # ARK requires 100,000+ open files for proper operation
       nofile:
