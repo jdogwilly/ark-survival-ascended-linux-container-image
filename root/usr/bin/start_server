@@ -672,6 +672,25 @@ fi
 
 log_stage "8" "Server Launch"
 
+# Check if crash watchdog is enabled
+if [ "$ENABLE_CRASH_WATCHDOG" = "1" ]; then
+  log_info "Crash watchdog is ENABLED"
+  log_info "Server will automatically restart if it crashes"
+  log_info "Max restarts: ${WATCHDOG_MAX_RESTARTS:-10}, Restart delay: ${WATCHDOG_RESTART_DELAY:-30}s"
+  log_info ""
+  log_success "Launching crash watchdog..."
+  log_info ""
+
+  # Export necessary environment variables for watchdog
+  export PROTON_VERSION
+  export ASA_START_PARAMS
+  export ADMIN_PASSWORD
+  export RCON_PORT
+
+  # Launch the watchdog script
+  exec /usr/bin/crashwatch
+fi
+
 # Ensure we're in the correct working directory for server launch
 # Wine needs to be able to map the working directory properly
 # Use server-files directory which is part of the Proton prefix mapping

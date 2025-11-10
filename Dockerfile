@@ -143,12 +143,13 @@ COPY --from=builder /usr/local/bin/cli-asa-mods /usr/local/bin/cli-asa-mods
 
 # Copy non-Python application files directly from source
 COPY root/usr/bin/start_server /usr/bin/start_server
+COPY root/usr/bin/crashwatch /usr/bin/crashwatch
 COPY root/usr/bin/healthcheck-liveness /usr/bin/healthcheck-liveness
 COPY root/usr/bin/healthcheck-readiness /usr/bin/healthcheck-readiness
 COPY root/usr/share/proton /usr/share/proton
 
 # Set permissions for scripts
-RUN chmod 0755 /usr/bin/start_server /usr/bin/healthcheck-liveness /usr/bin/healthcheck-readiness
+RUN chmod 0755 /usr/bin/start_server /usr/bin/crashwatch /usr/bin/healthcheck-liveness /usr/bin/healthcheck-readiness
 
 # Switch to gameserver user
 USER gameserver

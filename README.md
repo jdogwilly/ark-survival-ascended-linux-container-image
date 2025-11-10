@@ -648,6 +648,66 @@ If you cannot discover your server in the server browser, it's most likely due t
 * Your filter settings in the server browser exclude your server
 * You forgot clicking the "Show player server settings". ([view screenshot](https://raw.githubusercontent.com/mschnitzer/ark-survival-ascended-linux-container-image/main/assets/show-player-servers.jpg)) By default, only Nitrado servers are shown to players when searching for unofficial servers, unfortunately.
 
+### Server crashes frequently or shows "Allocator Stats" errors
+
+ARK: Survival Ascended requires the Linux kernel parameter `vm.max_map_count` to be set to at least **262144**. The default value on most Linux systems is 65530, which is too low and will cause server crashes.
+
+**Symptoms:**
+- Server crashes with "EXCEPTION_ACCESS_VIOLATION" errors
+- "Allocator Stats" messages in logs
+- Server crashes every 30-60 minutes
+- Crashes are more frequent with mods or large bases
+
+**Fix (Permanent):**
+
+1. Check your current value:
+   ```bash
+   sysctl vm.max_map_count
+   ```
+
+2. If the value is less than 262144, apply the fix:
+   ```bash
+   sudo sysctl -w vm.max_map_count=262144
+   ```
+
+3. Make the change permanent by adding it to `/etc/sysctl.conf`:
+   ```bash
+   echo "vm.max_map_count=262144" | sudo tee -a /etc/sysctl.conf
+   sudo sysctl -p
+   ```
+
+This fix applies to the **host machine**, not inside the container. You only need to do this once per server.
+
+### Automatic crash recovery (Crash Watchdog)
+
+Due to game-side issues introduced in recent ARK updates (November 2025 and later), servers may crash periodically regardless of configuration. This image includes an optional crash watchdog that automatically restarts the server when crashes occur.
+
+**To enable the crash watchdog**, add these environment variables to your `docker-compose.yml`:
+
+```yml
+environment:
+  - ENABLE_CRASH_WATCHDOG=1              # Enable auto-restart on crash
+  - WATCHDOG_MAX_RESTARTS=10             # Maximum restart attempts (default: 10)
+  - WATCHDOG_RESTART_DELAY=30            # Base delay between restarts in seconds (default: 30)
+  - WATCHDOG_CHECK_INTERVAL=30           # How often to check server status (default: 30)
+```
+
+**How it works:**
+- Monitors the ARK server process every 30 seconds (configurable)
+- Automatically restarts the server if it crashes
+- Uses exponential backoff (delay increases with each restart)
+- Resets the restart counter if the server runs stably for 10+ minutes
+- Stops trying after max restart attempts to prevent infinite loops
+
+**Example log output:**
+```
+[2025-11-10 12:34:56] [WATCHDOG] [ERROR] Server process 12345 has crashed (exit code: 1)
+[2025-11-10 12:35:26] [WATCHDOG] [INFO] Restarting server (attempt 1 of 10)...
+[2025-11-10 12:35:27] [WATCHDOG] [SUCCESS] Server started with PID: 12389
+```
+
+**Note:** The watchdog is a mitigation for game bugs, not a fix. If your server crashes immediately on startup, investigate the root cause first (vm.max_map_count, mod conflicts, disk space, etc.)
+
 ## Addressing "Connection Timeout" issues
 
 First of all, try to connect through the ingame console to your server. In many cases this works, but only connecting through the server browser causes an issue. Try to run the command `open $IP:$PORT` and test whether you
