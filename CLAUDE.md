@@ -398,6 +398,170 @@ When updating the Dockerfile or build configuration, be aware:
 - Each server instance RAM usage: ~13 GB
 - Proton download (at runtime): ~400-500 MB
 
+## Troubleshooting
+
+### Server Crashes and Stability Issues
+
+#### Critical: vm.max_map_count Requirement
+
+ARK: Survival Ascended requires the Linux kernel parameter `vm.max_map_count` to be set to at least **262144**. This is a **host-level** setting that must be configured on the machine running Docker.
+
+**Symptoms of incorrect vm.max_map_count:**
+- Server crashes with "EXCEPTION_ACCESS_VIOLATION" errors
+- "Allocator Stats" messages in logs
+- Crashes every 30-60 minutes
+- More frequent crashes with mods or large bases
+
+**Fix:**
+```bash
+# Check current value
+sysctl vm.max_map_count
+
+# Set temporary value (lost on reboot)
+sudo sysctl -w vm.max_map_count=262144
+
+# Make permanent
+echo "vm.max_map_count=262144" | sudo tee -a /etc/sysctl.conf
+sudo sysctl -p
+```
+
+**Implementation location:** This must be applied to the Docker host, not inside the container.
+
+#### Known Game Issues (November 2025+)
+
+As of November 2025, ARK: Survival Ascended has server-side stability issues affecting all Linux server implementations:
+
+**Affected versions:**
+- Game patch v74.31 and v74.32 (November 7, 2025)
+- All subsequent versions until Studio Wildcard releases fixes
+
+**Common symptoms:**
+- Random crashes every 30-60 minutes
+- Crashes in high-density areas or with many entities
+- Memory allocation errors
+
+**Known problematic mods:**
+- mod 928548 (Shiny! Dinos Ascended) - confirmed crash source
+- Lily's Extras variants - reported crashes
+
+**Mitigations:**
+1. Apply vm.max_map_count fix (critical)
+2. Disable problematic mods temporarily
+3. Enable crash watchdog for automatic recovery (see below)
+4. Monitor official patch notes for game fixes
+
+### Crash Watchdog (Auto-Restart)
+
+**Location:** `/usr/bin/crashwatch`
+**Integration:** STAGE 8 of `/usr/bin/start_server:675-692`
+**Trigger:** `ENABLE_CRASH_WATCHDOG=1` environment variable
+
+The crash watchdog provides automatic server restart capability when crashes occur.
+
+**Environment variables:**
+- `ENABLE_CRASH_WATCHDOG` - Enable watchdog (default: 0, disabled)
+- `WATCHDOG_MAX_RESTARTS` - Maximum consecutive restart attempts (default: 10)
+- `WATCHDOG_RESTART_DELAY` - Base delay between restarts in seconds (default: 30)
+- `WATCHDOG_CHECK_INTERVAL` - Process check interval in seconds (default: 30)
+
+**Behavior:**
+- Monitors ARK server process every 30 seconds (configurable)
+- Automatically restarts on crash using same parameters
+- Exponential backoff: delay = base_delay × restart_count
+- Resets restart counter if server runs stably for 10+ minutes
+- Stops after max attempts to prevent infinite loops
+- Graceful shutdown via RCON when possible
+
+**Example docker-compose.yml configuration:**
+```yml
+environment:
+  - ENABLE_CRASH_WATCHDOG=1
+  - WATCHDOG_MAX_RESTARTS=10
+  - WATCHDOG_RESTART_DELAY=30
+  - WATCHDOG_CHECK_INTERVAL=30
+```
+
+**Log format:**
+```
+[2025-11-10 12:34:56] [WATCHDOG] [INFO] Crash watchdog initialized
+[2025-11-10 12:34:56] [WATCHDOG] [SUCCESS] Server started with PID: 12345
+[2025-11-10 12:45:23] [WATCHDOG] [ERROR] Server process 12345 has crashed (exit code: 1)
+[2025-11-10 12:45:53] [WATCHDOG] [INFO] Restarting server (attempt 1 of 10)...
+```
+
+**When to use:**
+- Servers experiencing game-side crashes (November 2025 updates)
+- Production environments requiring high availability
+- Servers with problematic mods that can't be removed
+
+**When NOT to use:**
+- Crashes on startup (investigate root cause first)
+- Disk space issues
+- Configuration errors
+- Invalid mod combinations
+
+**Implementation notes:**
+- Watchdog runs as `exec` replacement for start_server (line 691)
+- Inherits all environment variables from start_server
+- Uses same Proton and launch parameters
+- Monitors process with `kill -0` (no-op signal check)
+- Server uptime tracked via `ps -o etimes`
+
+### Proton Version Management
+
+**Current version:** GE-Proton10-25 (released November 2, 2025)
+**Location:** `/usr/bin/start_server:431`
+**Update frequency:** As needed based on compatibility issues
+
+**To update Proton version:**
+1. Update `PROTON_VERSION` variable in `start_server:431`
+2. Add SHA512 checksum file to `/usr/share/proton/`
+3. Rebuild Docker image
+4. Old Proton installations remain in volumes until manually deleted
+
+**Proton downloads to:** `/home/gameserver/Steam/compatibilitytools.d/GE-Proton$VERSION/`
+
+### Common Debugging Commands
+
+**Access container:**
+```bash
+docker exec -ti asa-server bash          # as gameserver user
+docker exec -ti -u root asa-server bash  # as root
+```
+
+**Check server process:**
+```bash
+ps aux | grep -E "ArkAscended|AsaApi"
+pgrep -a ArkAscendedServer.exe
+```
+
+**View logs:**
+```bash
+docker logs asa-server
+docker logs asa-server --tail 100 --follow
+```
+
+**Check vm.max_map_count (on host):**
+```bash
+sysctl vm.max_map_count
+```
+
+**Test RCON:**
+```bash
+docker exec asa-server asa-ctrl rcon --exec "help"
+docker exec asa-server asa-ctrl rcon --exec "ListPlayers"
+```
+
+**Check Proton logs:**
+```bash
+docker exec asa-server cat /home/gameserver/server-files/steam-*.log
+```
+
+**Check disk space:**
+```bash
+df -h /home/gameserver/server-files
+```
+
 ## Security Notes
 
 - Server runs as non-root user `gameserver` (UID 25000)
