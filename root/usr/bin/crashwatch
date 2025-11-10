@@ -1,0 +1,221 @@
+#!/bin/bash
+
+# ============================================================================
+# ARK Server Crash Watchdog
+# ============================================================================
+# Monitors the ARK server process and automatically restarts it if it crashes.
+# This is useful for handling game-side crashes introduced by recent updates.
+#
+# Environment Variables:
+#   ENABLE_CRASH_WATCHDOG  - Enable watchdog (default: 0)
+#   WATCHDOG_MAX_RESTARTS  - Maximum restart attempts before giving up (default: 10)
+#   WATCHDOG_RESTART_DELAY - Base delay between restarts in seconds (default: 30)
+#   WATCHDOG_CHECK_INTERVAL - How often to check process status in seconds (default: 30)
+# ============================================================================
+
+# Import logging functions from start_server
+log_info() {
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] [WATCHDOG] [INFO] $1"
+}
+
+log_success() {
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] [WATCHDOG] [SUCCESS] ✓ $1"
+}
+
+log_error() {
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] [WATCHDOG] [ERROR] ✗ $1"
+}
+
+log_warning() {
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] [WATCHDOG] [WARNING] ! $1"
+}
+
+# Configuration
+MAX_RESTARTS="${WATCHDOG_MAX_RESTARTS:-10}"
+RESTART_DELAY="${WATCHDOG_RESTART_DELAY:-30}"
+CHECK_INTERVAL="${WATCHDOG_CHECK_INTERVAL:-30}"
+RESTART_COUNT=0
+PROTON_VERSION="10-25"
+PROTON_DIR_NAME="GE-Proton$PROTON_VERSION"
+STEAM_COMPAT_DIR="/home/gameserver/Steam/compatibilitytools.d"
+ASA_BINARY_DIR="/home/gameserver/server-files/ShooterGame/Binaries/Win64"
+ASA_PLUGIN_BINARY_PATH="$ASA_BINARY_DIR/AsaApiLoader.exe"
+
+# Get start parameters from environment or use defaults
+ASA_START_PARAMS="${ASA_START_PARAMS:-TheIsland_WP?listen -NoBattlEye}"
+
+# Add mods if available
+MODS="$(/usr/local/bin/cli-asa-mods 2>/dev/null || echo '')"
+if [ -n "$MODS" ]; then
+  ASA_START_PARAMS="$ASA_START_PARAMS $MODS"
+fi
+
+log_info "Crash watchdog initialized"
+log_info "Configuration: Max restarts=$MAX_RESTARTS, Restart delay=${RESTART_DELAY}s, Check interval=${CHECK_INTERVAL}s"
+
+# Function to start the ARK server
+start_server() {
+  log_info "Starting ARK server (attempt $((RESTART_COUNT + 1)) of $((MAX_RESTARTS + 1)))..."
+
+  # Change to server directory
+  cd /home/gameserver/server-files || {
+    log_error "Failed to change to server directory"
+    return 1
+  }
+
+  # Determine which binary to use
+  if [ -f "$ASA_PLUGIN_BINARY_PATH" ]; then
+    log_info "Launching with plugin loader (AsaApiLoader.exe)"
+    $STEAM_COMPAT_DIR/$PROTON_DIR_NAME/proton run ./ShooterGame/Binaries/Win64/AsaApiLoader.exe $ASA_START_PARAMS &
+  else
+    log_info "Launching standard server (ArkAscendedServer.exe)"
+    $STEAM_COMPAT_DIR/$PROTON_DIR_NAME/proton run ./ShooterGame/Binaries/Win64/ArkAscendedServer.exe $ASA_START_PARAMS &
+  fi
+
+  ARK_PID=$!
+  log_success "Server started with PID: $ARK_PID"
+
+  # Return the PID
+  echo "$ARK_PID"
+  return 0
+}
+
+# Function to check if server is running
+is_server_running() {
+  local pid=$1
+
+  # Check if PID exists and is running
+  if kill -0 "$pid" 2>/dev/null; then
+    return 0  # Running
+  else
+    return 1  # Not running
+  fi
+}
+
+# Function to gracefully shutdown server via RCON
+graceful_shutdown() {
+  local pid=$1
+
+  log_info "Attempting graceful shutdown via RCON..."
+
+  if [ -n "$ADMIN_PASSWORD" ] && [ -n "$RCON_PORT" ]; then
+    # Try to save world
+    /usr/local/bin/asa-ctrl rcon --exec "SaveWorld" 2>/dev/null && log_info "World saved"
+    sleep 3
+
+    # Try to send DoExit
+    /usr/local/bin/asa-ctrl rcon --exec "DoExit" 2>/dev/null && log_info "DoExit command sent"
+
+    # Wait up to 30 seconds for graceful exit
+    for i in $(seq 1 30); do
+      if ! is_server_running "$pid"; then
+        log_success "Server shut down gracefully"
+        return 0
+      fi
+      sleep 1
+    done
+  fi
+
+  # If RCON didn't work or wasn't configured, send SIGTERM
+  log_warning "RCON shutdown failed or not configured - sending SIGTERM"
+  kill -TERM "$pid" 2>/dev/null
+
+  # Wait up to 30 seconds
+  for i in $(seq 1 30); do
+    if ! is_server_running "$pid"; then
+      log_success "Server shut down after SIGTERM"
+      return 0
+    fi
+    sleep 1
+  done
+
+  # Force kill if still running
+  log_warning "Server did not respond to SIGTERM - force killing"
+  kill -KILL "$pid" 2>/dev/null
+  sleep 2
+
+  return 0
+}
+
+# Signal handling for watchdog shutdown
+watchdog_shutdown() {
+  log_info "Received shutdown signal - stopping watchdog and server"
+
+  if [ -n "$CURRENT_PID" ] && is_server_running "$CURRENT_PID"; then
+    graceful_shutdown "$CURRENT_PID"
+  fi
+
+  log_info "Watchdog exiting"
+  exit 0
+}
+
+trap watchdog_shutdown SIGTERM SIGINT
+
+# Main watchdog loop
+log_info "Starting initial server instance..."
+CURRENT_PID=$(start_server)
+
+if [ -z "$CURRENT_PID" ]; then
+  log_error "Failed to start initial server instance"
+  exit 1
+fi
+
+# Give server time to initialize
+log_info "Waiting ${CHECK_INTERVAL}s before starting monitoring..."
+sleep "$CHECK_INTERVAL"
+
+log_success "Watchdog monitoring active for PID: $CURRENT_PID"
+
+# Monitoring loop
+while true; do
+  # Check if server is still running
+  if ! is_server_running "$CURRENT_PID"; then
+    # Get exit code
+    wait "$CURRENT_PID" 2>/dev/null
+    EXIT_CODE=$?
+
+    log_error "Server process $CURRENT_PID has crashed (exit code: $EXIT_CODE)"
+    RESTART_COUNT=$((RESTART_COUNT + 1))
+
+    # Check if we've hit max restarts
+    if [ "$RESTART_COUNT" -gt "$MAX_RESTARTS" ]; then
+      log_error "Maximum restart attempts ($MAX_RESTARTS) reached"
+      log_error "Server appears to be in a crash loop - giving up"
+      exit 1
+    fi
+
+    # Calculate backoff delay (exponential backoff)
+    BACKOFF_DELAY=$((RESTART_DELAY * RESTART_COUNT))
+    log_info "Waiting ${BACKOFF_DELAY}s before restart attempt $RESTART_COUNT of $MAX_RESTARTS..."
+    sleep "$BACKOFF_DELAY"
+
+    # Restart server
+    log_info "Restarting server (attempt $RESTART_COUNT)..."
+    CURRENT_PID=$(start_server)
+
+    if [ -z "$CURRENT_PID" ]; then
+      log_error "Failed to restart server"
+      exit 1
+    fi
+
+    # Give server time to initialize
+    sleep "$CHECK_INTERVAL"
+
+    # Reset restart count if server runs successfully for a while
+    # (This happens after the next check cycle)
+  else
+    # Server is running - check if it's been stable
+    # Reset restart count if server has been running for at least 10 minutes
+    SERVER_UPTIME=$(ps -p "$CURRENT_PID" -o etimes= 2>/dev/null | tr -d ' ')
+
+    if [ -n "$SERVER_UPTIME" ] && [ "$SERVER_UPTIME" -gt 600 ]; then
+      if [ "$RESTART_COUNT" -gt 0 ]; then
+        log_success "Server has been stable for 10+ minutes - resetting restart counter"
+        RESTART_COUNT=0
+      fi
+    fi
+  fi
+
+  # Sleep before next check
+  sleep "$CHECK_INTERVAL"
+done
