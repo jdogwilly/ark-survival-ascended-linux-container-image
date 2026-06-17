@@ -1,0 +1,66 @@
+#!/usr/bin/env python3
+"""A2S_INFO health check for ARK: Survival Ascended.
+
+Sends a Source (A2S_INFO) query to the local Steam query port and exits 0 on a
+valid response, 1 otherwise. This exercises the exact UDP path a game client /
+the Steam server browser uses, so it detects a server that is "up but not
+serving" (process alive, network layer wedged) which a process check misses.
+
+Used for Kubernetes readiness/liveness probes (and as the fallback for the
+startup probe). Configuration via environment:
+
+  QUERY_PORT   UDP query port to probe (default: 27015)
+  A2S_HOST     host to probe (default: 127.0.0.1)
+  A2S_TIMEOUT  socket timeout in seconds (default: 5)
+"""
+
+import os
+import socket
+import sys
+
+HOST = os.environ.get("A2S_HOST", "127.0.0.1")
+PORT = int(os.environ.get("QUERY_PORT", "27015"))
+TIMEOUT = float(os.environ.get("A2S_TIMEOUT", "5"))
+
+# A2S_INFO request: header (0xFFFFFFFF) + 'T' + "Source Engine Query\0"
+A2S_INFO_REQUEST = b"\xff\xff\xff\xff\x54Source Engine Query\x00"
+
+# Response header bytes
+S2A_INFO_SRC = 0x49  # 'I' - valid A2S_INFO response
+S2C_CHALLENGE = 0x41  # 'A' - challenge that must be echoed back
+
+
+def query(host: str, port: int, timeout: float) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+        sock.settimeout(timeout)
+        sock.sendto(A2S_INFO_REQUEST, (host, port))
+        data, _ = sock.recvfrom(4096)
+
+        # Modern Source servers may reply with a challenge that must be appended
+        # to the original request and resent.
+        if len(data) >= 5 and data[4] == S2C_CHALLENGE:
+            challenge = data[5:9]
+            sock.sendto(A2S_INFO_REQUEST + challenge, (host, port))
+            data, _ = sock.recvfrom(4096)
+
+        return len(data) >= 5 and data[4] == S2A_INFO_SRC
+
+
+def main() -> None:
+    try:
+        if query(HOST, PORT, TIMEOUT):
+            sys.exit(0)
+        print(
+            f"A2S health check failed: unexpected response from {HOST}:{PORT}",
+            file=sys.stderr,
+        )
+    except Exception as exc:  # noqa: BLE001 - probe must never raise
+        print(
+            f"A2S health check failed: {HOST}:{PORT}: {exc}",
+            file=sys.stderr,
+        )
+    sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
