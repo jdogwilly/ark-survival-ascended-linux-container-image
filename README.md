@@ -422,7 +422,18 @@ docker exec -t asa-server asa-ctrl rcon --exec 'saveworld'
 
 ### Health Checks
 
-The container includes built-in health checks for both Docker and Kubernetes deployments. There are two types of health checks available:
+The container includes built-in health checks for both Docker and Kubernetes deployments. There are four scripts available, from cheapest/coarsest to most player-accurate:
+
+| Script | Signal | Best for |
+|--------|--------|----------|
+| `/usr/bin/healthcheck-liveness` | process exists (`pgrep`) | Docker HEALTHCHECK; coarse liveness |
+| `/usr/bin/healthcheck-readiness` | RCON `help` round-trip | admin/ops readiness |
+| `/usr/bin/healthcheck-a2s` | A2S_INFO over the UDP query port | readiness/liveness — detects "up but not serving" |
+| `/usr/bin/healthcheck-startup` | log marker, falling back to A2S | startup probe (separates "updating" from "hung") |
+
+Recommended Kubernetes layering: `healthcheck-startup` for the startupProbe (with
+a long `failureThreshold` to cover SteamCMD updates), and `healthcheck-a2s` for
+both readiness and liveness so a hung-but-running server is restarted.
 
 #### Liveness Check (Process-based)
 
@@ -463,6 +474,67 @@ readinessProbe:
 
 **Note**: The readiness check requires RCON to be enabled and configured. See [Executing RCON commands](#executing-rcon-commands) for setup instructions.
 
+#### A2S Check (query-port based)
+
+The A2S check sends a Source `A2S_INFO` query to the local Steam query port —
+the exact path a game client / the Steam server browser uses. Unlike the process
+check, it detects a server that is running but not actually serving players
+(network layer wedged). `start_server` injects `-QueryPort` automatically
+(`QUERY_PORT`, default `27015`) so this works out of the box; expose that UDP
+port if you query it from outside the pod.
+
+**Kubernetes readiness/liveness probe example**:
+```yaml
+readinessProbe:
+  exec:
+    command:
+      - /usr/bin/healthcheck-a2s
+  periodSeconds: 30
+  timeoutSeconds: 10
+  failureThreshold: 3
+livenessProbe:
+  exec:
+    command:
+      - /usr/bin/healthcheck-a2s
+  periodSeconds: 60
+  timeoutSeconds: 10
+  failureThreshold: 5
+```
+
+Configuration: `QUERY_PORT` (default `27015`), `A2S_HOST` (default `127.0.0.1`),
+`A2S_TIMEOUT` (default `5`).
+
+#### Startup Check (log marker with A2S fallback)
+
+The startup check reports "started" only once the server is genuinely serving,
+so a long startupProbe window can cover legitimate SteamCMD/mod updates without
+a weak process check passing too early. If `READY_LOG_MARKER` is set and the
+server log exists, it succeeds when that substring appears in the log
+(`ASA_LOG_FILE`); otherwise it falls back to the A2S check.
+
+**Kubernetes startup probe example**:
+```yaml
+startupProbe:
+  exec:
+    command:
+      - /usr/bin/healthcheck-startup
+  periodSeconds: 30
+  timeoutSeconds: 10
+  failureThreshold: 60   # ~30 min to cover first download / large updates
+```
+
+#### Startup / SteamCMD reliability
+
+To reduce stuck startups, `start_server` supports:
+
+- `STEAMCMD_CLEAN_STEAMAPPS` (default `true`): clears the `steamapps` directory
+  on start to avoid corrupted-appmanifest / incomplete-download validation
+  loops. Game files (`ShooterGame/`) are not deleted — SteamCMD re-validates
+  them. The Proton Wine prefix (`steamapps/compatdata`) is preserved unless
+  `STEAMCMD_CLEAN_PRESERVE_COMPATDATA=false`.
+- `STEAMCMD_TIMEOUT` (default `1800` seconds): kills and retries a SteamCMD
+  attempt that hangs, instead of blocking container startup indefinitely.
+
 #### Manual Health Check Testing
 
 You can manually test the health checks at any time:
@@ -475,6 +547,14 @@ echo $?  # 0 = healthy, 1 = unhealthy
 # Test readiness (RCON check)
 docker exec asa-server /usr/bin/healthcheck-readiness
 echo $?  # 0 = ready, 1 = not ready
+
+# Test A2S query check (player-facing serving path)
+docker exec asa-server /usr/bin/healthcheck-a2s
+echo $?  # 0 = serving, 1 = not serving
+
+# Test startup check (log marker / A2S fallback)
+docker exec asa-server /usr/bin/healthcheck-startup
+echo $?  # 0 = started, 1 = not yet
 ```
 
 #### Viewing Docker Health Status

@@ -1,0 +1,28 @@
+#!/bin/bash
+# Startup probe: report "started" only once the server is genuinely serving,
+# not merely once the process exists. This cleanly separates "still updating"
+# (SteamCMD/mods/map load) from "hung", so a long startupProbe window can cover
+# legitimate updates without a weak pgrep check passing too early.
+#
+# Strategy:
+#   1. If READY_LOG_MARKER is set and the server log exists, succeed when the
+#      marker appears in the log (fast, explicit readiness signal). The exact
+#      ASA log string can change between versions, so it is configurable.
+#   2. Otherwise fall back to an A2S_INFO query, which is the ground truth that
+#      players can actually see/join the server.
+#
+# Configuration via environment:
+#   READY_LOG_MARKER  substring to look for in the server log (default: unset)
+#   ASA_LOG_FILE      path to the server log
+#                     (default: server-files/ShooterGame/Saved/Logs/ShooterGame.log)
+
+LOG_FILE="${ASA_LOG_FILE:-/home/gameserver/server-files/ShooterGame/Saved/Logs/ShooterGame.log}"
+
+if [ -n "${READY_LOG_MARKER:-}" ] && [ -f "$LOG_FILE" ]; then
+    if grep -qF "$READY_LOG_MARKER" "$LOG_FILE" 2>/dev/null; then
+        exit 0
+    fi
+    exit 1
+fi
+
+exec /usr/bin/healthcheck-a2s

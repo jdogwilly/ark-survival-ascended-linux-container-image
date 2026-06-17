@@ -129,6 +129,17 @@ fi
 STEAMCMD_MAX_RETRIES="${STEAMCMD_MAX_RETRIES:-10}"
 STEAMCMD_RETRY_DELAY="${STEAMCMD_RETRY_DELAY:-5}"
 STEAMCMD_AUTO_CLEANUP="${STEAMCMD_AUTO_CLEANUP:-true}"
+# Maximum wall-clock time for a single SteamCMD attempt before it is killed and
+# retried. Prevents a wedged app_update from hanging container startup forever.
+STEAMCMD_TIMEOUT="${STEAMCMD_TIMEOUT:-1800}"
+# Proactively clear the steamapps directory on start to avoid corrupted-file
+# stalls (bad appmanifest / incomplete downloads causing validation loops).
+# Game files live in ShooterGame/, NOT steamapps/, so this does not force a full
+# game re-download — SteamCMD re-validates existing files.
+STEAMCMD_CLEAN_STEAMAPPS="${STEAMCMD_CLEAN_STEAMAPPS:-true}"
+# The Proton Wine prefix lives in steamapps/compatdata. Preserve it by default
+# so we don't rebuild the prefix every boot; set to false for a full wipe.
+STEAMCMD_CLEAN_PRESERVE_COMPATDATA="${STEAMCMD_CLEAN_PRESERVE_COMPATDATA:-true}"
 STEAMCMD_LOG="/tmp/steamcmd_last_run.log"
 SERVER_FILES_DIR="/home/gameserver/server-files"
 STEAM_DIR="/home/gameserver/Steam"
@@ -216,6 +227,37 @@ cleanup_steam_directory() {
   fi
 }
 
+# Function to proactively clean the steamapps directory on start.
+# Corrupted appmanifest files or incomplete downloads frequently cause SteamCMD
+# validation loops and stuck startups that previously required manual fixes.
+# Removing steamapps forces SteamCMD into a clean validation pass. Actual game
+# files live under ShooterGame/, so they are not deleted here; SteamCMD will
+# re-validate them and only re-download missing/corrupt pieces.
+clean_steamapps() {
+  local steamapps_dir="$SERVER_FILES_DIR/steamapps"
+  local compatdata_dir="$steamapps_dir/compatdata"
+
+  if [ "$STEAMCMD_CLEAN_STEAMAPPS" != "true" ]; then
+    log_info "steamapps cleanup disabled (STEAMCMD_CLEAN_STEAMAPPS=$STEAMCMD_CLEAN_STEAMAPPS)"
+    return 0
+  fi
+
+  if [ ! -d "$steamapps_dir" ]; then
+    log_info "No steamapps directory present - nothing to clean"
+    return 0
+  fi
+
+  if [ "$STEAMCMD_CLEAN_PRESERVE_COMPATDATA" = "true" ] && [ -d "$compatdata_dir" ]; then
+    log_info "Cleaning steamapps directory (preserving Proton compatdata/Wine prefix)..."
+    find "$steamapps_dir" -mindepth 1 -maxdepth 1 ! -name "compatdata" -exec rm -rf {} +
+    log_success "steamapps cleaned (compatdata preserved)"
+  else
+    log_info "Cleaning entire steamapps directory (including compatdata)..."
+    rm -rf "$steamapps_dir"
+    log_success "steamapps directory removed"
+  fi
+}
+
 # Function to run SteamCMD with retry logic
 run_steamcmd_with_retry() {
   local attempt=1
@@ -228,10 +270,15 @@ run_steamcmd_with_retry() {
   while [ "$attempt" -le "$max_retries" ]; do
     log_info "Attempt $attempt of $max_retries"
 
-    # Run SteamCMD and capture output
+    # Run SteamCMD and capture output (bounded by STEAMCMD_TIMEOUT so a wedged
+    # update cannot hang startup indefinitely; a timeout exits 124 and retries).
     cd /home/gameserver/steamcmd
-    ./steamcmd.sh +force_install_dir "$SERVER_FILES_DIR" +login anonymous +app_update 2430930 validate +quit 2>&1 | tee "$STEAMCMD_LOG"
+    timeout "$STEAMCMD_TIMEOUT" ./steamcmd.sh +force_install_dir "$SERVER_FILES_DIR" +login anonymous +app_update 2430930 validate +quit 2>&1 | tee "$STEAMCMD_LOG"
     local exit_code="${PIPESTATUS[0]}"
+
+    if [ "$exit_code" -eq 124 ]; then
+      log_warning "SteamCMD timed out after ${STEAMCMD_TIMEOUT}s and was killed"
+    fi
 
     # Check if successful
     if [ "$exit_code" -eq 0 ]; then
@@ -341,6 +388,9 @@ log_stage "4" "Server Files Download/Update"
 log_info "Downloading/updating ARK: Survival Ascended server files (AppID: 2430930)"
 log_info "This may take a while depending on your internet connection..."
 
+# Proactively clear corrupted steam state before validating/downloading
+clean_steamapps
+
 # download/update server files with retry logic
 if ! run_steamcmd_with_retry; then
   log_error "FATAL: Unable to download/update server files after all retry attempts"
@@ -376,6 +426,14 @@ MODS="$(/usr/local/bin/cli-asa-mods)"
 ASA_START_PARAMS=$(envsubst <<< "$ASA_START_PARAMS")
 
 ASA_START_PARAMS="$ASA_START_PARAMS $MODS"
+
+# Ensure a Steam query port is configured so A2S health checks and the server
+# browser work. Only injected if the caller hasn't already set a QueryPort.
+QUERY_PORT="${QUERY_PORT:-27015}"
+if ! grep -qi "QueryPort" <<< "$ASA_START_PARAMS"; then
+  ASA_START_PARAMS="$ASA_START_PARAMS -QueryPort=${QUERY_PORT}"
+  log_info "Injected -QueryPort=${QUERY_PORT} for A2S/query support"
+fi
 ASA_BINARY_NAME="ArkAscendedServer.exe"
 ASA_PLUGIN_BINARY_NAME="AsaApiLoader.exe"
 ASA_PLUGIN_LOADER_ARCHIVE_NAME=$(basename $ASA_BINARY_DIR/AsaApi_*.zip)
