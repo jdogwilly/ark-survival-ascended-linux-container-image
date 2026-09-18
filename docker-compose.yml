@@ -41,7 +41,7 @@ services:
   set-permissions:
     entrypoint: "/bin/bash -c 'chown -R 25000:25000 /steam ; chown -R 25000:25000 /steamcmd ; chown -R 25000:25000 /server-files ; chown -R 25000:25000 /cluster'"
     user: root
-    image: "ubuntu:24.04"
+    image: "ubuntu:26.04"
     volumes:
       - steam:/steam:rw
       - steamcmd:/steamcmd:rw
