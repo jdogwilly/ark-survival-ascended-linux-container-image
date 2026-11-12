@@ -1,7 +1,7 @@
 #######################
 # Stage 1: Builder
 #######################
-FROM ubuntu:24.04@sha256:66460d557b25769b102175144d538d88219c077c678a49af4afca6fbfc1b5252 AS builder
+FROM ubuntu:24.04@sha256:2198e4c65076e9cb0b3d695219df667c0e3b0072da64ca3c2648aca17dcecaf5 AS builder
 
 # Prevent interactive prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
@@ -28,7 +28,7 @@ RUN uv pip install --system --break-system-packages --no-cache .
 #######################
 # Stage 2: Runtime
 #######################
-FROM ubuntu:24.04@sha256:66460d557b25769b102175144d538d88219c077c678a49af4afca6fbfc1b5252
+FROM ubuntu:24.04@sha256:2198e4c65076e9cb0b3d695219df667c0e3b0072da64ca3c2648aca17dcecaf5
 
 # Build arguments for dynamic metadata
 ARG VERSION=dev
