@@ -38,6 +38,8 @@
       "extractVersionTemplate": "^GE-Proton(?<version>.+)$"
     }
   ],
+  "schedule": ["* * * * 1"],
+  "separateMajorMinor": false,
   "packageRules": [
     {
       "description": "Auto-bump VERSION file for image-impacting changes",
@@ -47,6 +49,32 @@
         "fileFilters": ["VERSION"],
         "executionMode": "branch"
       }
+    },
+    {
+      "description": "Group all GitHub Action version updates together",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["major", "minor", "patch"],
+      "groupName": "GitHub Actions",
+      "groupSlug": "github-actions"
+    },
+    {
+      "description": "Group all Docker image updates together",
+      "matchManagers": ["docker"],
+      "matchUpdateTypes": ["major", "minor", "patch"],
+      "groupName": "Docker Images",
+      "groupSlug": "docker-images"
+    },
+    {
+      "description": "Group all Debian/Ubuntu apt package updates together",
+      "matchManagers": ["custom.regex"],
+      "matchUpdateTypes": ["major", "minor", "patch"],
+      "groupName": "Ubuntu Packages",
+      "groupSlug": "ubuntu-packages"
+    },
+    {
+      "description": "Separate major versions for manual review",
+      "matchUpdateTypes": ["major"],
+      "separateMinorPatch": true
     }
   ]
 }
