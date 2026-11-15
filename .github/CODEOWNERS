@@ -1,0 +1,3 @@
+# Merges into main need a code-owner review (protect-main ruleset), so
+# approvals from bots such as turnstone-agent do not count.
+* @jdogwilly
