@@ -8,7 +8,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 # Package versions for reproducible builds
 # renovate: suite=noble depName=python3
-ARG PYTHON3_VERSION="3.12.3-0ubuntu2"
+ARG PYTHON3_VERSION="3.12.3-0ubuntu2.1"
 
 # Install minimal build dependencies with pinned versions
 RUN apt-get update && apt-get install -y \
@@ -56,23 +56,23 @@ ENV LANG=en_US.UTF-8
 
 # Package versions for reproducible builds
 # renovate: suite=noble depName=lib32gcc-s1
-ARG LIB32GCC_VERSION="14.2.0-4ubuntu2~24.04"
+ARG LIB32GCC_VERSION="14.2.0-4ubuntu2~24.04.1"
 # renovate: suite=noble depName=python3
-ARG PYTHON3_VERSION="3.12.3-0ubuntu2"
+ARG PYTHON3_VERSION="3.12.3-0ubuntu2.1"
 # renovate: suite=noble depName=wget
-ARG WGET_VERSION="1.21.4-1ubuntu4.1"
+ARG WGET_VERSION="1.21.4-1ubuntu4.5"
 # renovate: suite=noble depName=tar
-ARG TAR_VERSION="1.35+dfsg-3build1"
+ARG TAR_VERSION="1.35+dfsg-3ubuntu0.4"
 # renovate: suite=noble depName=unzip
 ARG UNZIP_VERSION="6.0-28ubuntu4.1"
 # renovate: suite=noble depName=ca-certificates
-ARG CA_CERTS_VERSION="20240203"
+ARG CA_CERTS_VERSION="20260816ubuntu0.24.04.2"
 # renovate: suite=noble depName=libfreetype6
-ARG LIBFREETYPE6_VERSION="2.13.2+dfsg-1build3"
+ARG LIBFREETYPE6_VERSION="2.13.2+dfsg-1ubuntu0.2"
 # renovate: suite=noble depName=procps
-ARG PROCPS_VERSION="2:4.0.4-4ubuntu3.2"
+ARG PROCPS_VERSION="2:4.0.4-4ubuntu3.3"
 # renovate: suite=noble depName=locales
-ARG LOCALES_VERSION="2.39-0ubuntu8.6"
+ARG LOCALES_VERSION="2.39-0ubuntu8.12"
 # renovate: suite=noble depName=gettext-base
 ARG GETTEXT_BASE_VERSION="0.21-14ubuntu2"
 
