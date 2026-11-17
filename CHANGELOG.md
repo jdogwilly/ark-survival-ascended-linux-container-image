@@ -8,6 +8,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `/usr/bin/healthcheck-a2s` script: A2S_INFO (Source query) based health check
+  over the UDP query port — detects "up but not serving" servers that a process
+  check misses. Configurable via `QUERY_PORT`, `A2S_HOST`, `A2S_TIMEOUT`.
+- `/usr/bin/healthcheck-startup` script: startup probe that gates on a
+  configurable server-log marker (`READY_LOG_MARKER`, `ASA_LOG_FILE`) and falls
+  back to the A2S check, cleanly separating "still updating" from "hung".
+- Automatic `-QueryPort` injection in `start_server` (`QUERY_PORT`, default
+  `27015`) so A2S health checks and the server browser work out of the box;
+  skipped if a QueryPort is already present in the start parameters.
+- Proactive `steamapps` cleanup on start (`STEAMCMD_CLEAN_STEAMAPPS`, default
+  `true`) to avoid corrupted-appmanifest / incomplete-download validation loops
+  that previously required manual fixes. Preserves the Proton Wine prefix
+  (`steamapps/compatdata`) by default; set
+  `STEAMCMD_CLEAN_PRESERVE_COMPATDATA=false` for a full wipe. Game files in
+  `ShooterGame/` are not deleted (SteamCMD re-validates them).
+- Per-attempt SteamCMD timeout (`STEAMCMD_TIMEOUT`, default `1800`s) so a wedged
+  `app_update` is killed and retried instead of hanging container startup.
+
+### Added (earlier)
 - TO-DO.md roadmap documenting planned improvements and best practices
 - .dockerignore file to reduce build context size and improve build performance
 - VERSION file as single source of truth for semantic versioning
